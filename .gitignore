@@ -1,0 +1,11 @@
+.venv
+.env
+data
+**/__pycache__/
+**/spark-warehouse/
+
+mise.toml
+
+mlruns/
+img/
+
