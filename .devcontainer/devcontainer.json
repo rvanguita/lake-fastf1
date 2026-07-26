@@ -1,0 +1,53 @@
+{
+    "name": "Python 3.13 and Java 17",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "remoteUser": "vscode",
+    "workspaceFolder": "/workspace",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "forwardPorts": [
+        8888,
+        4040
+    ],
+    "portsAttributes": {
+        "8888": {
+            "label": "Jupyter"
+        },
+        "4040": {
+            "label": "Spark UI"
+        }
+    },
+    "containerEnv": {
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk",
+        "PYSPARK_PYTHON": "/usr/local/bin/python",
+        "PYSPARK_DRIVER_PYTHON": "/usr/local/bin/python",
+        "PYSPARK_SUBMIT_ARGS": "--packages io.delta:delta-spark_2.12:3.2.1 pyspark-shell"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-toolsai.jupyter",
+                "ms-toolsai.jupyter-renderers",
+                "redhat.vscode-yaml",
+                "ms-azuretools.vscode-docker"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.terminal.activateEnvironment": true,
+                "python.analysis.typeCheckingMode": "basic",
+                "jupyter.askForKernelRestart": false,
+                "jupyter.notebookFileRoot": "${workspaceFolder}",
+                "editor.formatOnSave": true,
+                "editor.codeActionsOnSave": {
+                    "source.fixAll.ruff": "explicit",
+                    "source.organizeImports.ruff": "explicit"
+                }
+            }
+        }
+    },
+    "postCreateCommand": "python -m ipykernel install --user --name python --display-name \"Python 3.13\""
+}
