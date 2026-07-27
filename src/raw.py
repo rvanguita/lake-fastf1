@@ -1,3 +1,4 @@
+# %%
 import os
 import time
 
@@ -8,14 +9,7 @@ from datetime import date, datetime
 
 from pathlib import Path
 
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
+from rich.progress import track
 
 import dotenv
 
@@ -29,11 +23,7 @@ CURRENT_YEAR = datetime.now().year
 class ExtractData:
     def __init__(
         self, years: list[int], reload_data: bool,
-<<<<<<< HEAD
-        identifiers: list[str], base_path: str = "data/raw"
-=======
         identifiers: list[str], base_path: str = os.getenv("PATH_RAW")
->>>>>>> etl
     ) -> None:
 
         self.years = years
@@ -90,39 +80,19 @@ class ExtractData:
         df.to_parquet(filename, index=False)
 
     def process_years(self) -> None:
-        total_gps = 30 * len(self.identifiers) * len(self.years)
+        for year in track(self.years, description=f"Processing year"):
+            self.process_identifiers(year)
+            time.sleep(10)
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
-        ) as progress:
-            years_task = progress.add_task("Years", total=len(self.years))
-            current_task = progress.add_task(
-                "Current: waiting...", total=total_gps)
-
-            for year in self.years:
-                progress.update(
-                    years_task, description=f"Processing year: {year}")
-                self.process_identifiers(year, progress, current_task)
-                progress.advance(years_task)
-                time.sleep(10)
-
-    def process_identifiers(self, year: int, progress: Progress, task_id: int) -> None:
+    def process_identifiers(self, year: int) -> None:
         for identifier in self.identifiers:
             for gp in range(1, 30):
-                progress.update(
-                    task_id, description=f"id: {identifier} | gp: {gp:02}")
 
                 ok = self.process_data(year, gp, identifier)
-                progress.advance(task_id)
 
-                # if (not ok and
-                #     identifier == 'R'):
-                #     return
+                if (not ok and
+                        identifier == 'R'):
+                    return
 
 
 def main():
@@ -140,8 +110,12 @@ def main():
     extract_data = ExtractData(
         years=years, reload_data=args.reload_data,
         identifiers=args.identifiers)
+    print()
     extract_data.process_years()
 
 
+# %%
 if __name__ == "__main__":
     main()
+
+# %%

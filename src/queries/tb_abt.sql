@@ -1,10 +1,6 @@
 WITH tb_abt AS (
     
-<<<<<<< HEAD
-    SELECT *
-=======
     SELECT t1.*
->>>>>>> etl
         , coalesce(t2.rank_driver, 0) AS flChampion
 
     FROM driver_all_statistic AS t1
