@@ -1,0 +1,9 @@
+api-driver-champion:
+  build:
+    context: ./src/app/api
+    dockerfile: DockerFile
+  ports:
+    - "5002:5002"
+  env_file:
+    ./.env
+  restart:  alwayes
