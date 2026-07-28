@@ -150,11 +150,7 @@ def formula_one_data_pipeline() -> None:
     def bronze_layer() -> None:
 
         @task(
-<<<<<<< HEAD
             task_id="consolidated_results",
-=======
-            task_id="consolidated_data",
->>>>>>> 860c53a (feat: new order dag)
             inlets=[RAW_RESULTS],
             outlets=[BRONZE_RESULTS],
         )
