@@ -1,27 +1,28 @@
 # %%
 import os
-import flask
+from flask import Flask, request
 import mlflow
 import pandas as pd
 
 import dotenv
 dotenv.load_dotenv()  # Load environment variables from .env file
 
+MLFLOW_URI = os.getenv("MLFLOW_URI")
+MLFLOW_MODEL_REGISTERED = os.getenv("MLFLOW_MODEL_REGISTERED")
+API_PORT = os.getenv("API_PORT")
 
-mlflow.set_tracking_uri(os.getenv("MLFLOW_URI"))
+
+mlflow.set_tracking_uri(MLFLOW_URI)
 
 models = mlflow.search_registered_models(
-    filter_string=f"name='{os.getenv("MLFLOW_MODEL_REGISTRED")}'")[-1]
-# last_version = max([int(i.version) for i in models.latest_versions])
-last_version = models.latest_versions[-1]
+    filter_string=f"name='{MLFLOW_MODEL_REGISTERED}'")[-1]
+last_version = int(models.latest_versions[-1].version)
 MODEL = mlflow.sklearn.load_model(
-    f"models:/{os.getenv("MLFLOW_MODEL_REGISTRED")}/{last_version}")
-# %%
-models, last_version, MODEL
+    f"models:/{MLFLOW_MODEL_REGISTERED}/{last_version}")
 
 # %%
 
-app = flask.Flask(__name__)
+app = Flask(__name__)
 
 
 @app.route('/health_check')
@@ -31,7 +32,7 @@ def health_check():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    payload = flask.request.get_json()
+    payload = request.get_json()
     data = payload.get('values', [])
     if len(data) == 0:
         return {"error": "No features provided"}, 400
@@ -49,6 +50,6 @@ def predict():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5002)
+    app.run(host='0.0.0.0', port=API_PORT)
 
 # %%
