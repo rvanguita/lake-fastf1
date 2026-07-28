@@ -24,3 +24,6 @@ tabulate
 flask
 
 apache-airflow
+streamlit
+
+deltalake
