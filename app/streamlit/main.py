@@ -12,16 +12,18 @@ import dotenv
 dotenv.load_dotenv()
 
 URI_API = f"http://api-driver-champion:{os.getenv("API_PORT")}"
-DELTA_TABLE_PATH_SILVER = os.environ["DELTA_TABLE_PATH_SILVER"]
-DELTA_TABLE_PATH_BRONZE = os.environ["DELTA_TABLE_PATH_BRONZE"]
-def format_color(x:str):
-    if x is None:
+DELTA_TABLE_PATH_SILVER = os.environ["TABLE_PATH_SILVER"]
+TABLE_PATH_BRONZE = os.environ["TABLE_PATH_BRONZE"]
+
+
+def format_color(color:str):
+    if color is None or str(color).strip() == "" or str(color).lower() == "nan":
         return "#ffffff"
 
-    if x.startswith("#"):
-        return x.lower()
+    if color.startswith("#"):
+        return color.lower()
     
-    return f"#{x}".lower()
+    return f"#{color}".lower()
 
 
 def get_id_predictions(values):
@@ -62,29 +64,39 @@ def get_predictions():
     df = pd.merge(data, df, on='id')
 
     results = (
-        DeltaTable(DELTA_TABLE_PATH_BRONZE)
+        DeltaTable(TABLE_PATH_BRONZE)
         .to_pyarrow_table()
         .to_pandas()
         .drop_duplicates(subset=["DriverId"])
         )
-
-    results = results[['DriverId', 'TeamName',
-                       'TeamColor', 'FullName' ]]
+    
+    results = results[[
+        'DriverId', 'TeamName',
+        'TeamColor', 'FullName' , 'TeamId'
+        ]]
     
     results['TeamColor'] = results['TeamColor'].apply(format_color)
     
-    return pd.merge(df, results, on='DriverId')        
+    df = pd.merge(df, results, on='DriverId')    
+    
+    df['driver_team_id'] = (
+        df['DriverId'] 
+        + '_' 
+        + df['TeamId']
+        )
+    
+    return df
 
 
 def main() -> None:
     st.set_page_config(page_title="F1 Data", page_icon="📊", layout="wide")
-    st.markdown("# :checkered_flag: F1 Data ")
+    st.markdown("# :checkered_flag: F1 - Predict Champion")
     data = get_predictions()
 
-    # st.dataframe(data)
+    st.dataframe(data)
     
-    drivers_data = (data[['DriverId', 'FullName']]
-                    .sort_values(["DriverId", "FullName"])
+    drivers_data = (data[['DriverId', 'driver_team_id', 'dt_ref']]
+                    .sort_values(["dt_ref", "driver_team_id"])
                     .drop_duplicates(subset=['DriverId'], keep='first')
                     .dropna()
                     )
@@ -96,8 +108,8 @@ def main() -> None:
 
     
     driver_selected = st.multiselect(":racing_car: Driver: ",
-                                     options=drivers_data['FullName'],
-                                     default=most_prob['FullName'],
+                                     options=drivers_data['driver_team_id'],
+                                     default=most_prob['driver_team_id'],
                                      )
 
 
@@ -106,32 +118,38 @@ def main() -> None:
                                    default=data['Year'].max(),
                                    )
 
-    data_filter = data[data["FullName"].isin(driver_selected)]
-    data_filter = data_filter[data_filter['Year'].isin(year_selected)]
 
-
-    data_chart = (data_filter
-                  .pivot_table(index='dt_ref', columns='FullName', values='prob_win')
+    data_filter = data[
+        data["driver_team_id"].isin(driver_selected)
+        & data["Year"].isin(year_selected)
+    ]
+    
+    data_pivot = (data_filter
+                  .pivot_table(index='dt_ref', columns='driver_team_id', values='prob_win')
                   .reset_index()
                   )
-    drivers_select = data_chart.columns.tolist()[1:]
+    drivers_select = data_pivot.columns.tolist()[1:]
     
     team_colors = (
-        data_filter[['FullName', 'TeamColor']].drop_duplicates("FullName")
-        .set_index("FullName")
+        data_filter[['driver_team_id', 'TeamColor']]
+        .drop_duplicates("driver_team_id")
+        .set_index("driver_team_id")
         .reindex(drivers_select)["TeamColor"]
         .tolist()
         )
     
     
-    column_config={i: st.column_config.NumberColumn(i, format="percent") for i in data_chart.columns[1:]}
+    column_config={
+        i: st.column_config.NumberColumn(i, format="percent") for i in data_pivot.columns[1:]
+        }
+    
     column_config["dt_ref"] = st.column_config.DateColumn("Data Predict")
 
 
     graphs, tables = st.tabs(["Graphic", "Tables"])
 
     with graphs:
-        st.line_chart(data_chart,
+        st.line_chart(data_pivot,
                     x='dt_ref',
                     y=drivers_select,
                     y_label="Champion Win Prob.",
@@ -141,7 +159,7 @@ def main() -> None:
 
     with tables:
         st.markdown("Driver predict")
-        st.dataframe(data_chart, column_config=column_config)
+        st.dataframe(data_pivot, column_config=column_config)
 
         st.markdown("Full table")
         st.dataframe(data_filter)

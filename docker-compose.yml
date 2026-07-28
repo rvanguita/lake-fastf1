@@ -33,8 +33,8 @@ services:
     ports:
       - "8501:8501"
     environment:
-      DELTA_TABLE_PATH_SILVER: "/data/silver/tb_abt"
-      DELTA_TABLE_PATH_BRONZE: "/data/bronze/results"
+      TABLE_PATH_SILVER: "/data/silver/tb_abt"
+      TABLE_PATH_BRONZE: "/data/bronze/results"
 
     volumes:
       - ./data/silver/tb_abt:/data/silver/tb_abt:ro
