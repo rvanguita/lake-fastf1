@@ -150,7 +150,11 @@ def formula_one_data_pipeline() -> None:
     def bronze_layer() -> None:
 
         @task(
+<<<<<<< HEAD
             task_id="consolidated_results",
+=======
+            task_id="consolidated_data",
+>>>>>>> 860c53a (feat: new order dag)
             inlets=[RAW_RESULTS],
             outlets=[BRONZE_RESULTS],
         )
@@ -285,11 +289,9 @@ def formula_one_data_pipeline() -> None:
         driver_all_statistic = driver_all_statistic_group()
         abt = abt_group()
 
-        # driver_statistics >> driver_all_statistic
-
-        # champions >> abt
-        # driver_all_statistic >> abt
-        champions >> driver_statistics >> driver_all_statistic >> abt
+        champions 
+        driver_statistics >> driver_all_statistic 
+        [champions, driver_all_statistic] >> abt
     # -----------------------------------------------------------------------
     # Fluxo principal
     # -----------------------------------------------------------------------
