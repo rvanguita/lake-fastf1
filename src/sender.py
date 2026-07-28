@@ -5,7 +5,7 @@ import os
 
 import dotenv
 import boto3
-from tqdm import tqdm 
+from rich.progress import track
 
 dotenv.load_dotenv()
 
@@ -45,7 +45,7 @@ class Sender:
 
     def process_folder(self, folder):
         files = [i for i in os.listdir(folder) if i.endswith(".parquet")]
-        for f in tqdm(files):
+        for f in track(files):
             self.process_file(os.path.join(folder, f))
 
 

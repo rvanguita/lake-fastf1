@@ -1,5 +1,6 @@
 .venv
 .env
+.airflow/
 data
 **/__pycache__/
 **/spark-warehouse/

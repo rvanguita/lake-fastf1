@@ -31,6 +31,7 @@ SOURCES = {
     "last40": "driver_statistic_40",
 }
 
+DRIVER_STATISTIC_WINDOWS = (5, 10, 20, 40, 100)
 
 class SilverData:
     def __init__(self) -> None:
@@ -217,6 +218,19 @@ class SilverData:
                 destination_table,
             )
             raise
+        
+    def save_tb_abt(self) -> None:
+        self._register_table(
+            path=self.path_silver / "champions",
+            table_name="champions",
+        )
+
+        self._register_table(
+            path=self.path_silver / "driver_all_statistic",
+            table_name="driver_all_statistic",
+        )
+
+        self.save_query_table("tb_abt")
 
     @staticmethod
     def add_suffix(
@@ -275,6 +289,77 @@ class SilverData:
             raise
 
 
+# def main(year_stop: int | None = None) -> None:
+#     processing_year = year_stop or CURRENT_YEAR
+
+#     logger.info(
+#         "Iniciando processamento Silver: year_stop=%s",
+#         processing_year,
+#     )
+
+#     silver_data = SilverData()
+
+#     silver_data.save_query_table("champions")
+
+#     for number_of_races in (5, 10, 20, 40, 100):
+#         silver_data.driver_n_race(
+#             query_name="driver_statistic",
+#             number_of_races=number_of_races,
+#             year_stop=processing_year,
+#         )
+
+#     silver_data.consolidate_drivers_statistic(
+#         destination_table="driver_all_statistic",
+#     )
+
+#     silver_data._register_table(
+#         path=silver_data.path_silver / "champions",
+#         table_name="champions",
+#     )
+
+#     silver_data._register_table(
+#         path=silver_data.path_silver / "driver_all_statistic",
+#         table_name="driver_all_statistic",
+#     )
+
+#     silver_data.save_query_table("tb_abt")
+
+#     logger.info(
+#         "Processamento Silver concluído: year_stop=%s",
+#         processing_year,
+#     )
+
+def build_champions_table() -> None:
+    silver_data = SilverData()
+    silver_data.save_query_table("champions")
+
+
+def build_driver_statistic_table(
+    number_of_races: int,
+    year_stop: int,
+) -> None:
+    silver_data = SilverData()
+
+    silver_data.driver_n_race(
+        query_name="driver_statistic",
+        number_of_races=number_of_races,
+        year_stop=year_stop,
+    )
+
+
+def build_driver_all_statistic_table() -> None:
+    silver_data = SilverData()
+
+    silver_data.consolidate_drivers_statistic(
+        destination_table="driver_all_statistic",
+    )
+
+
+def build_tb_abt_table() -> None:
+    silver_data = SilverData()
+    silver_data.save_tb_abt()
+
+
 def main(year_stop: int | None = None) -> None:
     processing_year = year_stop or CURRENT_YEAR
 
@@ -283,32 +368,16 @@ def main(year_stop: int | None = None) -> None:
         processing_year,
     )
 
-    silver_data = SilverData()
+    build_champions_table()
 
-    silver_data.save_query_table("champions")
-
-    for number_of_races in (5, 10, 20, 40, 100):
-        silver_data.driver_n_race(
-            query_name="driver_statistic",
+    for number_of_races in DRIVER_STATISTIC_WINDOWS:
+        build_driver_statistic_table(
             number_of_races=number_of_races,
             year_stop=processing_year,
         )
 
-    silver_data.consolidate_drivers_statistic(
-        destination_table="driver_all_statistic",
-    )
-
-    silver_data._register_table(
-        path=silver_data.path_silver / "champions",
-        table_name="champions",
-    )
-
-    silver_data._register_table(
-        path=silver_data.path_silver / "driver_all_statistic",
-        table_name="driver_all_statistic",
-    )
-
-    silver_data.save_query_table("tb_abt")
+    build_driver_all_statistic_table()
+    build_tb_abt_table()
 
     logger.info(
         "Processamento Silver concluído: year_stop=%s",
