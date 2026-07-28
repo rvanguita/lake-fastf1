@@ -152,8 +152,8 @@ def formula_one_data_pipeline() -> None:
     # Ordem real de execução
     # -----------------------------------------------------------------------
 
-    # validation >> bronze >> silver
-    bronze >> silver
+    validation >> bronze >> silver
+
 
 
 f1_data_pipeline = formula_one_data_pipeline()
