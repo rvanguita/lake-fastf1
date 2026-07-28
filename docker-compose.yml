@@ -1,9 +1,28 @@
-api-driver-champion:
-  build:
-    context: ./src/app/api
-    dockerfile: DockerFile
-  ports:
-    - "5002:5002"
-  env_file:
-    ./.env
-  restart:  alwayes
+services:
+  api-driver-champion:
+    build:
+      context: ./app/api/
+      dockerfile: Dockerfile
+    ports:
+      - "5002:5002"
+    env_file:
+      ./.env
+    restart:  unless-stopped
+  streamlit-driver-champion:
+    build:
+      context: ./app/streamlit/
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      DELTA_TABLE_PATH_SILVER: "/data/silver/tb_abt"
+      DELTA_TABLE_PATH_BRONZE: "/data/bronze/results"
+
+    volumes:
+      - ./data/silver/tb_abt:/data/silver/tb_abt:ro
+      - ./data/bronze/results:/data/bronze/results:ro
+    env_file:
+      ./.env
+    restart:  unless-stopped
+    depends_on: 
+      - "api-driver-champion"
