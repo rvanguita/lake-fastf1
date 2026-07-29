@@ -12,18 +12,16 @@ import dotenv
 dotenv.load_dotenv()
 
 URI_API = f"http://api-driver-champion:{os.getenv("API_PORT")}"
-DELTA_TABLE_PATH_SILVER = os.environ["TABLE_PATH_SILVER"]
-TABLE_PATH_BRONZE = os.environ["TABLE_PATH_BRONZE"]
-
-
-def format_color(color:str):
-    if color is None or str(color).strip() == "" or str(color).lower() == "nan":
+DELTA_TABLE_PATH_SILVER = os.environ["DELTA_TABLE_PATH_SILVER"]
+DELTA_TABLE_PATH_BRONZE = os.environ["DELTA_TABLE_PATH_BRONZE"]
+def format_color(x:str):
+    if x is None:
         return "#ffffff"
 
-    if color.startswith("#"):
-        return color.lower()
+    if x.startswith("#"):
+        return x.lower()
     
-    return f"#{color}".lower()
+    return f"#{x}".lower()
 
 
 def get_id_predictions(values):
@@ -64,7 +62,7 @@ def get_predictions():
     df = pd.merge(data, df, on='id')
 
     results = (
-        DeltaTable(TABLE_PATH_BRONZE)
+        DeltaTable(DELTA_TABLE_PATH_BRONZE)
         .to_pyarrow_table()
         .to_pandas()
         .drop_duplicates(subset=["DriverId"])
@@ -91,10 +89,9 @@ def get_predictions():
 def main() -> None:
     st.set_page_config(page_title="F1 Data", page_icon="📊", layout="wide")
     st.markdown("# :checkered_flag: F1 - Predict Champion")
+    
     data = get_predictions()
 
-    st.dataframe(data)
-    
     drivers_data = (data[['DriverId', 'driver_team_id', 'dt_ref']]
                     .sort_values(["dt_ref", "driver_team_id"])
                     .drop_duplicates(subset=['DriverId'], keep='first')
