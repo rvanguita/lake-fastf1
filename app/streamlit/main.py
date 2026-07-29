@@ -12,8 +12,8 @@ import dotenv
 dotenv.load_dotenv()
 
 URI_API = f"http://api-driver-champion:{os.getenv("API_PORT")}"
-DELTA_TABLE_PATH_SILVER = os.environ["DELTA_TABLE_PATH_SILVER"]
-DELTA_TABLE_PATH_BRONZE = os.environ["DELTA_TABLE_PATH_BRONZE"]
+TABLE_PATH_SILVER = os.environ["TABLE_PATH_SILVER"]
+TABLE_PATH_BRONZE = os.environ["TABLE_PATH_BRONZE"]
 def format_color(x:str):
     if x is None:
         return "#ffffff"
@@ -37,7 +37,7 @@ def get_id_predictions(values):
 def get_predictions():
 
     data = (
-        DeltaTable(DELTA_TABLE_PATH_SILVER)
+        DeltaTable(TABLE_PATH_SILVER)
         .to_pyarrow_table()
         .to_pandas()
         )
@@ -62,7 +62,7 @@ def get_predictions():
     df = pd.merge(data, df, on='id')
 
     results = (
-        DeltaTable(DELTA_TABLE_PATH_BRONZE)
+        DeltaTable(TABLE_PATH_BRONZE)
         .to_pyarrow_table()
         .to_pandas()
         .drop_duplicates(subset=["DriverId"])
