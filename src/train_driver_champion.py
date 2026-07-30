@@ -5,6 +5,7 @@ from src.spark_session import spark_session
 
 import os
 import mlflow
+import mlflow.data
 
 import pandas as pd
 from sklearn import ensemble
@@ -150,5 +151,14 @@ with mlflow.start_run():
         name="RandomForest",
         skops_trusted_types=["numpy.dtype"]
     )
+
+    dataset = mlflow.data.from_pandas(
+        df,
+        name="tb_abt",
+        targets="flChampion",
+    )
+
+    # mlflow.log_input(dataset, context="training")
+
 
 # %%
