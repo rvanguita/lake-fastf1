@@ -1,6 +1,6 @@
 # %%
 
-from src.spark_session import spark_session, spark_view_table, spark_save_table, read_sql_file
+from src.spark_session import spark_session
 
 
 import os
@@ -150,3 +150,5 @@ with mlflow.start_run():
         name="RandomForest",
         skops_trusted_types=["numpy.dtype"]
     )
+
+# %%

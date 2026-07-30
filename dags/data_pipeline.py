@@ -71,7 +71,7 @@ SILVER_DRIVER_STATISTIC_40 = Asset(
 
 SILVER_DRIVER_STATISTIC_50 = Asset(
     name="silver_driver_statistic_50",
-    uri=f"file://{PATH_SILVER}/driver_statistic_100",
+    uri=f"file://{PATH_SILVER}/driver_statistic_50",
 )
 
 SILVER_DRIVER_ALL_STATISTIC = Asset(
@@ -176,62 +176,37 @@ def formula_one_data_pipeline() -> None:
         @task_group(group_id="driver_statistics")
         def driver_statistics_group() -> None:
 
-            @task(inlets=[BRONZE_RESULTS])
-            def create_driver_statistic(
-                number_of_races: int,
-            ) -> None:
-                silver_data = SilverData()
-                try:
-                    query_name = "driver_statistic"
+            @task(
+                task_id="rounds_driver_statistic",
+                inlets=[BRONZE_RESULTS],
+                outlets=[
+                    SILVER_DRIVER_STATISTIC_5,
+                    SILVER_DRIVER_STATISTIC_10,
+                    SILVER_DRIVER_STATISTIC_20,
+                    SILVER_DRIVER_STATISTIC_40,
+                    SILVER_DRIVER_STATISTIC_50,
+                ],)
+            def create_driver_statistic() -> None:
+                rounds = [5, 10 , 20, 40, 50]
+                for round in rounds:
+                    silver_data = SilverData()
+                    try:
+                        query_name = "driver_statistic"
 
-                    silver_data.driver_n_race(
-                        query_name=query_name,
-                        round=number_of_races
-                    )
-                finally:
-                    silver_data.stop()
+                        silver_data.driver_n_race(
+                            query_name=query_name,
+                            round=round
+                        )
+                    finally:
+                        silver_data.stop()
+            create_driver_statistic()       
                     
-            create_driver_statistic.override(
-                task_id="create_5_races",
-                outlets=[SILVER_DRIVER_STATISTIC_5],
-            )(
-                number_of_races=5,
-            )
-
-            create_driver_statistic.override(
-                task_id="create_10_races",
-                outlets=[SILVER_DRIVER_STATISTIC_10],
-            )(
-                number_of_races=10,
-            )
-
-            create_driver_statistic.override(
-                task_id="create_20_races",
-                outlets=[SILVER_DRIVER_STATISTIC_20],
-            )(
-                number_of_races=20,
-            )
-
-            create_driver_statistic.override(
-                task_id="create_40_races",
-                outlets=[SILVER_DRIVER_STATISTIC_40],
-            )(
-                number_of_races=40,
-            )
-
-            create_driver_statistic.override(
-                task_id="create_100_races",
-                outlets=[SILVER_DRIVER_STATISTIC_50],
-            )(
-                number_of_races=50,
-            )
-
         # -------------------------------------------------------------------
         # Silver: Consolidated driver statistics
         # -------------------------------------------------------------------
 
         @task_group(group_id="driver_all_statistic")
-        def driver_all_statistic_group() -> None:
+        def driver_consolidate_statistic() -> None:
 
             @task(
                 task_id="consolidate",
@@ -280,13 +255,14 @@ def formula_one_data_pipeline() -> None:
             create_abt()
 
         champions = champions_group()
-        driver_statistics = driver_statistics_group()
-        driver_all_statistic = driver_all_statistic_group()
+        drivers_statistics_group = driver_statistics_group()
+        driver_all_statistic = driver_consolidate_statistic()
         abt = abt_group()
 
         champions 
-        driver_statistics >> driver_all_statistic 
+        drivers_statistics_group >> driver_all_statistic 
         [champions, driver_all_statistic] >> abt
+        
     # -----------------------------------------------------------------------
     # Fluxo principal
     # -----------------------------------------------------------------------

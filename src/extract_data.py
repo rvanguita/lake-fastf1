@@ -73,7 +73,6 @@ class ExtractData:
             return False
 
         self.save_data_parquet(df, filename)
-        time.sleep(1)
         return True
 
     def save_data_parquet(self, df: pd.DataFrame, filename: str) -> None:
@@ -92,6 +91,7 @@ class ExtractData:
                 if (not new_data and
                         identifier == 'R'):
                     return new_data
+                time.sleep(1)
         return new_data
     
 def main():

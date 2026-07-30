@@ -15,37 +15,37 @@ PATH_QUERIES = os.environ["PATH_QUERIES"]
 PATH_SILVER = os.environ["PATH_SILVER"]
 PATH_BRONZE = os.environ["PATH_BRONZE"]
 
+
 class SilverData():
     def __init__(self) -> None:
         self.spark = spark_session()
         self.spark_view_table(f"{PATH_BRONZE}/results", "results")
-        
+
     def stop(self):
         self.spark.stop()
-        
+
     def spark_view_table(self, path, table_name):
         table_view = (self.spark
-                    .read
-                    .format("delta")
-                    .load(path)
-                    )
+                      .read
+                      .format("delta")
+                      .load(path)
+                      )
         table_view.createOrReplaceTempView(table_name)
 
     def read_save_query(
-        self, 
+        self,
         query_name: str
-        ) -> None:
+    ) -> None:
         query = self.read_sql_file(query_name)
         df = self.spark.sql(query)
 
         spark_save_table(f"{PATH_SILVER}/{query_name}", df)
-        
 
     def driver_n_race(
-        self, 
-        query_name: str, 
+        self,
+        query_name: str,
         round: int
-        ) -> None:
+    ) -> None:
         query = self.read_sql_file(query_name)
         df = (self.spark
                   .sql(query.format(year_start=1980,
@@ -56,20 +56,20 @@ class SilverData():
             f"{PATH_SILVER}/{query_name}_{round}", df)
 
     def consolidate_drivers_statistic(
-        self, 
-        rounds,
+        self,
+        rounds: list[int] = [5, 10, 20, 40, 50],
         table_name: str = "driver_all_statistic"
-        ) -> None:
-        df = []
-        
+    ) -> None:
+        df_all = []
+
         for round in rounds:
             self.spark_view_table(
-                f"{PATH_SILVER}/{round}",
-                f"{round}"
+                f"{PATH_SILVER}/driver_statistic_{round}",
+                f"driver_statistic_{round}"
             )
 
             df = self.spark.table(f"driver_statistic_{round}")
-            df.append(
+            df_all.append(
                 self.add_suffix(
                     dataframe=df,
                     suffix=round,
@@ -83,10 +83,10 @@ class SilverData():
                 on=JOIN_COLUMNS,
                 how="inner",
             ),
-            df,
+            df_all,
         )
         spark_save_table(
-            f"{PATH_SILVER}/{table_name}", 
+            f"{PATH_SILVER}/{table_name}",
             driver_features)
 
     def add_suffix(
@@ -106,40 +106,46 @@ class SilverData():
             *[F.col(column) for column in join_columns],
             *metric_columns,
         )
-        
-    def tb_abt(self, ):
+
+    def tb_abt(self):
         champions = "champions"
         drivers = "driver_all_statistic"
         self.spark_view_table(f"{PATH_SILVER}/{champions}", f"{champions}")
         self.spark_view_table(f"{PATH_SILVER}/{drivers}", f"{drivers}")
         self.read_save_query("tb_abt")
 
-
     def read_sql_file(self, query_name):
         with open(f'{PATH_QUERIES}/{query_name}.sql', 'r') as file:
             query = file.read()
         return query
-    
+
+
 def main():
     silver_data = SilverData()
 
     silver_data.read_save_query("champions")
-    
-    silver_data = SilverData()
+
+    # silver_data = SilverData()
     query_name = "driver_statistic"
     rounds = [5, 10, 20, 40, 50]
 
     # silver_data.sessions_last_n_race(query_name, rounds)
+    # silver_data = SilverData()
     silver_data.driver_n_race(query_name, rounds[0])
     silver_data.driver_n_race(query_name, rounds[1])
     silver_data.driver_n_race(query_name, rounds[2])
     silver_data.driver_n_race(query_name, rounds[3])
     silver_data.driver_n_race(query_name, rounds[4])
 
-    silver_data = SilverData()
-    silver_data.consolidate_drivers_statistic(
-        rounds, "driver_all_statistic"
-        )
+    # silver_data = SilverData()
+    (silver_data
+     .consolidate_drivers_statistic())
 
-    silver_data = SilverData()
-    silver_data.tb_abt(query_name)
+    # silver_data = SilverData()
+    silver_data.tb_abt()
+
+
+# %%
+if __name__ == "__main__":
+    main()
+# %%
