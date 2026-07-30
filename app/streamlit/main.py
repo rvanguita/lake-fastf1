@@ -14,14 +14,14 @@ dotenv.load_dotenv()
 URI_API = f"http://api-driver-champion:{os.getenv("API_PORT")}"
 TABLE_PATH_SILVER = os.environ["TABLE_PATH_SILVER"]
 TABLE_PATH_BRONZE = os.environ["TABLE_PATH_BRONZE"]
-def format_color(x:str):
-    if x is None:
+def format_color(color:str):
+    if color is None:
         return "#ffffff"
 
-    if x.startswith("#"):
-        return x.lower()
+    if color.startswith("#"):
+        return color.lower()
     
-    return f"#{x}".lower()
+    return f"#{color}".lower()
 
 
 def get_id_predictions(values):

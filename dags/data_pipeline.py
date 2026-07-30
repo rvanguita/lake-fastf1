@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import os
 
-import pendulum
+from datetime import datetime
 
 from airflow.sdk import (
     Asset,
@@ -12,14 +10,9 @@ from airflow.sdk import (
     task_group,
 )
 
-from src.consolidate_data import consolidate_data
 from src.extract_data import ExtractData
-from src.silver_data import (
-    build_champions_table,
-    build_driver_all_statistic_table,
-    build_driver_statistic_table,
-    build_tb_abt_table,
-)
+from src.spark_session import consolidate_data
+from src.silver_data import SilverData
 
 
 PATH_RAW = os.environ["PATH_RAW"]
@@ -76,8 +69,8 @@ SILVER_DRIVER_STATISTIC_40 = Asset(
     uri=f"file://{PATH_SILVER}/driver_statistic_40",
 )
 
-SILVER_DRIVER_STATISTIC_100 = Asset(
-    name="silver_driver_statistic_100",
+SILVER_DRIVER_STATISTIC_50 = Asset(
+    name="silver_driver_statistic_50",
     uri=f"file://{PATH_SILVER}/driver_statistic_100",
 )
 
@@ -100,12 +93,7 @@ SILVER_TB_ABT = Asset(
     dag_id="data-pipeline",
     description="Pipeline Raw, Bronze e Silver",
     schedule="0 0 * * 1",
-    start_date=pendulum.datetime(
-        2026,
-        7,
-        28,
-        tz="America/Sao_Paulo",
-    ),
+    start_date=datetime(2026,7,28),
     catchup=False,
     max_active_runs=1,
     tags=["f1", "etl"],
@@ -124,23 +112,15 @@ def formula_one_data_pipeline() -> None:
             outlets=[RAW_RESULTS],
         )
         def extract_fastf1() -> bool:
-            context = get_current_context()
-            execution_year = context["data_interval_end"].year
-
-            extractor = ExtractData(
-                years=[execution_year],
-                identifiers=["R", "S"],
-                reload_data=False,
-            )
-
+            extractor = ExtractData()
             return extractor.process_years()
 
-        @task.short_circuit(task_id="has_new_data")
-        def has_new_data(updated: bool) -> bool:
-            return updated
+        # @task.short_circuit(task_id="has_new_data")
+        # def has_new_data(updated: bool) -> bool:
+        #     return updated
 
         extracted = extract_fastf1()
-        has_new_data(extracted)
+        # has_new_data(extracted)
 
     # -----------------------------------------------------------------------
     # Bronze
@@ -155,7 +135,7 @@ def formula_one_data_pipeline() -> None:
             outlets=[BRONZE_RESULTS],
         )
         def create_results() -> None:
-            consolidate_data("results")
+            consolidate_data()
 
         create_results()
 
@@ -165,7 +145,7 @@ def formula_one_data_pipeline() -> None:
 
     @task_group(group_id="silver")
     def silver_layer() -> None:
-
+        
         # -------------------------------------------------------------------
         # Silver: Champions
         # -------------------------------------------------------------------
@@ -179,7 +159,13 @@ def formula_one_data_pipeline() -> None:
                 outlets=[SILVER_CHAMPIONS],
             )
             def create_champions() -> None:
-                build_champions_table()
+                silver_data = SilverData()
+                try:
+                    (silver_data
+                    .read_save_query("champions")
+                    )
+                finally:
+                    silver_data.stop()
 
             create_champions()
 
@@ -194,14 +180,17 @@ def formula_one_data_pipeline() -> None:
             def create_driver_statistic(
                 number_of_races: int,
             ) -> None:
-                context = get_current_context()
-                execution_year = context["data_interval_end"].year
+                silver_data = SilverData()
+                try:
+                    query_name = "driver_statistic"
 
-                build_driver_statistic_table(
-                    number_of_races=number_of_races,
-                    year_stop=execution_year,
-                )
-
+                    silver_data.driver_n_race(
+                        query_name=query_name,
+                        round=number_of_races
+                    )
+                finally:
+                    silver_data.stop()
+                    
             create_driver_statistic.override(
                 task_id="create_5_races",
                 outlets=[SILVER_DRIVER_STATISTIC_5],
@@ -232,9 +221,9 @@ def formula_one_data_pipeline() -> None:
 
             create_driver_statistic.override(
                 task_id="create_100_races",
-                outlets=[SILVER_DRIVER_STATISTIC_100],
+                outlets=[SILVER_DRIVER_STATISTIC_50],
             )(
-                number_of_races=100,
+                number_of_races=50,
             )
 
         # -------------------------------------------------------------------
@@ -251,12 +240,17 @@ def formula_one_data_pipeline() -> None:
                     SILVER_DRIVER_STATISTIC_10,
                     SILVER_DRIVER_STATISTIC_20,
                     SILVER_DRIVER_STATISTIC_40,
-                    SILVER_DRIVER_STATISTIC_100,
+                    SILVER_DRIVER_STATISTIC_50,
                 ],
                 outlets=[SILVER_DRIVER_ALL_STATISTIC],
             )
             def consolidate_driver_statistics() -> None:
-                build_driver_all_statistic_table()
+                silver_data = SilverData()
+                try:
+                    (silver_data
+                    .consolidate_drivers_statistic())
+                finally:
+                    silver_data.stop()
 
             consolidate_driver_statistics()
 
@@ -276,7 +270,12 @@ def formula_one_data_pipeline() -> None:
                 outlets=[SILVER_TB_ABT],
             )
             def create_abt() -> None:
-                build_tb_abt_table()
+                silver_data = SilverData()
+                try:
+                    (silver_data
+                    .tb_abt())
+                finally:
+                    silver_data.stop()
 
             create_abt()
 

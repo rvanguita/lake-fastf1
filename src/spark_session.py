@@ -1,10 +1,9 @@
-# %%
+import os
 from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
 from delta import configure_spark_with_delta_pip
 
-DATA_FORMAT = "delta"
-PATH_QUERIES = "src/queries"
+PATH_RAW = os.environ["PATH_RAW"]
+PATH_BRONZE = os.environ["PATH_BRONZE"]
 
 
 def spark_session():
@@ -16,27 +15,22 @@ def spark_session():
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
-def spark_view_table(path, table_name):
-    spark = spark_session()
-    table_view = (spark
-                  .read
-                  .format(DATA_FORMAT)
-                  .load(path)
-                  )
-    table_view.createOrReplaceTempView(table_name)
-
-
 def spark_save_table(path, df):
     (df
      .coalesce(1)
      .write
-     .format(DATA_FORMAT)
+     .format("delta")
      .mode("overwrite")
      .save(path)
      )
 
 
-def read_sql_file(query_name):
-    with open(f'{PATH_QUERIES}/{query_name}.sql', 'r') as file:
-        query = file.read()
-    return query
+def consolidate_data(data_set: str = "results"):
+    spark = spark_session()
+    df = (spark
+          .read
+          .format("parquet")
+          .load(f"{PATH_RAW}/{data_set}/*.{"parquet"}")
+          )
+    spark_save_table(f"{PATH_BRONZE}/{data_set}", df)
+    spark.stop()
