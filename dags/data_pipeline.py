@@ -1,3 +1,11 @@
+"""Airflow DAG for the Formula 1 data pipeline.
+
+This workflow orchestrates the full ETL journey from raw FastF1 data
+extraction to Bronze and Silver transformations. It is designed as a
+long-term pipeline that will continue to evolve as data quality,
+performance, and analytical requirements improve.
+"""
+
 import os
 
 from datetime import datetime
@@ -21,7 +29,7 @@ PATH_SILVER = os.environ["PATH_SILVER"]
 
 
 # ---------------------------------------------------------------------------
-# Assets Raw
+# Raw assets
 # ---------------------------------------------------------------------------
 
 RAW_RESULTS = Asset(
@@ -31,7 +39,7 @@ RAW_RESULTS = Asset(
 
 
 # ---------------------------------------------------------------------------
-# Assets Bronze
+# Bronze assets
 # ---------------------------------------------------------------------------
 
 BRONZE_RESULTS = Asset(
@@ -41,7 +49,7 @@ BRONZE_RESULTS = Asset(
 
 
 # ---------------------------------------------------------------------------
-# Assets Silver
+# Silver assets
 # ---------------------------------------------------------------------------
 
 SILVER_CHAMPIONS = Asset(
@@ -91,7 +99,7 @@ SILVER_TB_ABT = Asset(
 
 @dag(
     dag_id="data-pipeline",
-    description="Pipeline Raw, Bronze e Silver",
+    description="Raw, Bronze, and Silver data pipeline",
     schedule="0 0 * * 1",
     start_date=datetime(2026,7,28),
     catchup=False,
@@ -264,7 +272,7 @@ def formula_one_data_pipeline() -> None:
         [champions, driver_all_statistic] >> abt
         
     # -----------------------------------------------------------------------
-    # Fluxo principal
+    # Main flow
     # -----------------------------------------------------------------------
 
     raw = raw_layer()
