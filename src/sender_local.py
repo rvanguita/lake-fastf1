@@ -1,31 +1,17 @@
-# %%
-
 import os
 from pathlib import Path
 
+from sqlalchemy import create_engine
+from sqlalchemy.engine import URL
+
 from src.spark_session import spark_session
 
-import pandas as pd
-# from deltalake import DeltaTable
-from sqlalchemy import create_engine
 
-PATH_BRONZE = os.environ["PATH_BRONZE"]
-PATH_SILVER = os.environ["PATH_SILVER"]
-
-spark = spark_session()
-# %%
-USER = os.getenv("MYSQL_USER")
+USER = os.environ["MYSQL_USER"]
 PASSWORD = os.environ["MYSQL_PASSWORD"]
-HOST = os.getenv("MYSQL_HOST")
-PORT = os.getenv("MYSQL_PORT")
-DATABASE = os.getenv("MYSQL_DATABASE")
-
-
-# %%
-connection_string = f"mysql+pymysql://{USER}:{PASSWORD}@{HOST}:{PORT}/{DATABASE}"
-engine = create_engine(connection_string)
-
-# %%
+HOST = os.environ["MYSQL_HOST"]
+PORT = int(os.getenv("MYSQL_PORT", "3306"))
+ID_TABLE = os.getenv("MYSQL_ID_TABLE", "")
 
 
 def find_delta_tables(root_path: str | Path) -> list[Path]:
@@ -38,50 +24,56 @@ def find_delta_tables(root_path: str | Path) -> list[Path]:
     ]
 
 
+def create_mysql_engine(database: str):
+    url = URL.create(
+        drivername="mysql+pymysql",
+        username=USER,
+        password=PASSWORD,
+        host=HOST,
+        port=PORT,
+        database=database,
+    )
+
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
+
+
 def send_layer_to_mysql(
     layer: str,
-    root_path: Path,
+    root_path: str | Path,
 ) -> None:
-    delta_tables = find_delta_tables(root_path)
+    spark = spark_session()
+    engine = create_mysql_engine(layer)
 
-    for delta_path in delta_tables:
-        relative_path = delta_path.relative_to(root_path)
+    try:
+        for delta_path in find_delta_tables(root_path):
+            relative_path = delta_path.relative_to(Path(root_path))
+            table_suffix = "_".join(relative_path.parts)
 
-        table_name = "_".join(
-            [layer, *relative_path.parts]
-        ).lower()
+            table_name = (
+                f"{ID_TABLE}_{table_suffix}"
+                if ID_TABLE
+                else table_suffix
+            )
 
-        table_name = table_name.replace("-", "_").replace(" ", "_")
+            dataframe = (
+                spark.read
+                .format("delta")
+                .load(str(delta_path))
+                .toPandas()
+            )
 
-        print(f"Enviando {delta_path} para {table_name}")
-        df = (
-            spark.read
-            .format("delta")
-            .load(str(delta_path))
-            .toPandas()
-        )
-
-        df.to_sql(
-            name=table_name,           # Name of the SQL table
-            con=engine,             # SQLAlchemy engine
-            # What to do if table exists ('fail', 'replace', or 'append')
-            if_exists="replace",
-            index=False             # Do not write the DataFrame index as a column
-        )
-
-        print(f"Tabela {table_name} enviada com sucesso")
-
-
-try:
-    send_layer_to_mysql(
-        layer="bronze",
-        root_path=PATH_BRONZE,
-    )
-
-    send_layer_to_mysql(
-        layer="silver",
-        root_path=PATH_SILVER,
-    )
-
-finally:
-    spark.stop()
+            dataframe.to_sql(
+                name=table_name,
+                con=engine,
+                if_exists="replace",
+                index=False,
+                chunksize=1_000,
+                method="multi",
+            )
+    finally:
+        engine.dispose()
+        spark.stop()

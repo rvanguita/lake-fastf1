@@ -29,3 +29,4 @@ streamlit
 deltalake
 boto3
 pymysql
+sqlalchemy

@@ -12,8 +12,12 @@ import dotenv
 dotenv.load_dotenv()
 
 URI_API = f"http://api-driver-champion:{os.getenv("API_PORT")}"
+
 TABLE_PATH_SILVER = os.environ["TABLE_PATH_SILVER"]
+
 TABLE_PATH_BRONZE = os.environ["TABLE_PATH_BRONZE"]
+
+
 def format_color(color:str):
     if color is None:
         return "#ffffff"

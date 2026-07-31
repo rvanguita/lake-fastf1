@@ -102,7 +102,7 @@ SILVER_TB_ABT = Asset(
     dag_id="data-pipeline",
     description="Raw, Bronze, and Silver data pipeline",
     schedule="0 0 * * 1",
-    start_date=datetime(2026,7,28),
+    start_date=datetime(2026, 7, 28),
     catchup=False,
     max_active_runs=1,
     tags=["f1", "etl"],
@@ -154,7 +154,7 @@ def formula_one_data_pipeline() -> None:
 
     @task_group(group_id="silver")
     def silver_layer() -> None:
-        
+
         # -------------------------------------------------------------------
         # Silver: Champions
         # -------------------------------------------------------------------
@@ -171,8 +171,8 @@ def formula_one_data_pipeline() -> None:
                 silver_data = SilverData()
                 try:
                     (silver_data
-                    .read_save_query("champions")
-                    )
+                     .read_save_query("champions")
+                     )
                 finally:
                     silver_data.stop()
 
@@ -196,7 +196,7 @@ def formula_one_data_pipeline() -> None:
                     SILVER_DRIVER_STATISTIC_50,
                 ],)
             def create_driver_statistic() -> None:
-                rounds = [5, 10 , 20, 40, 50]
+                rounds = [5, 10, 20, 40, 50]
                 for round in rounds:
                     silver_data = SilverData()
                     try:
@@ -208,8 +208,8 @@ def formula_one_data_pipeline() -> None:
                         )
                     finally:
                         silver_data.stop()
-            create_driver_statistic()       
-                    
+            create_driver_statistic()
+
         # -------------------------------------------------------------------
         # Silver: Consolidated driver statistics
         # -------------------------------------------------------------------
@@ -232,7 +232,7 @@ def formula_one_data_pipeline() -> None:
                 silver_data = SilverData()
                 try:
                     (silver_data
-                    .consolidate_drivers_statistic())
+                     .consolidate_drivers_statistic())
                 finally:
                     silver_data.stop()
 
@@ -257,7 +257,7 @@ def formula_one_data_pipeline() -> None:
                 silver_data = SilverData()
                 try:
                     (silver_data
-                    .tb_abt())
+                     .tb_abt())
                 finally:
                     silver_data.stop()
 
@@ -268,30 +268,23 @@ def formula_one_data_pipeline() -> None:
         driver_all_statistic = driver_consolidate_statistic()
         abt = abt_group()
 
-        champions 
-        drivers_statistics_group >> driver_all_statistic 
+        champions
+        drivers_statistics_group >> driver_all_statistic
         [champions, driver_all_statistic] >> abt
-    @task_group(
-        id='sender to my localserver'
-        )    
-    def sender_data():
-        @task(id="bronze")
-        def bronze():
-            
+
+    @task(task_id="sender_mysql")
+    def sender_mysql() -> None:
+        layers = {
+            "bronze": PATH_BRONZE,
+            "silver": PATH_SILVER,
+        }
+
+        for layer, path in layers.items():
             send_layer_to_mysql(
-                layer="bronze",
-                root_path=PATH_BRONZE,
+                layer=layer,
+                root_path=path,
             )
-        @task(id="silver")
-        def silver():
-            send_layer_to_mysql(
-                layer="silver",
-                root_path=PATH_BRONZE,
-            )
-        bronze_send = bronze()
-        silver_send = silver()
-        bronze_send
-        silver_send
+
     # -----------------------------------------------------------------------
     # Main flow
     # -----------------------------------------------------------------------
@@ -299,6 +292,7 @@ def formula_one_data_pipeline() -> None:
     raw = raw_layer()
     bronze = bronze_layer()
     silver = silver_layer()
+    sender_data = sender_mysql()
 
     raw >> bronze >> silver >> sender_data
 
