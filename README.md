@@ -1,6 +1,6 @@
 
 # Lake FastF1
-
+![Alt Text](img/high.png)
 Lake FastF1 is a long-term data engineering and machine learning project focused on Formula 1 data. It combines data ingestion, lakehouse-style transformations, and a lightweight prediction experience powered by a trained model.
 
 ## What this project does

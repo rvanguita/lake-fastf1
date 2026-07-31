@@ -21,6 +21,7 @@ from airflow.sdk import (
 from src.extract_data import ExtractData
 from src.spark_session import consolidate_data
 from src.silver_data import SilverData
+from src.sender import send_layer_to_mysql
 
 
 PATH_RAW = os.environ["PATH_RAW"]
@@ -270,7 +271,27 @@ def formula_one_data_pipeline() -> None:
         champions 
         drivers_statistics_group >> driver_all_statistic 
         [champions, driver_all_statistic] >> abt
-        
+    @task_group(
+        id='sender to my localserver'
+        )    
+    def sender_data():
+        @task(id="bronze")
+        def bronze():
+            
+            send_layer_to_mysql(
+                layer="bronze",
+                root_path=PATH_BRONZE,
+            )
+        @task(id="silver")
+        def silver():
+            send_layer_to_mysql(
+                layer="silver",
+                root_path=PATH_BRONZE,
+            )
+        bronze_send = bronze()
+        silver_send = silver()
+        bronze_send
+        silver_send
     # -----------------------------------------------------------------------
     # Main flow
     # -----------------------------------------------------------------------
@@ -279,7 +300,7 @@ def formula_one_data_pipeline() -> None:
     bronze = bronze_layer()
     silver = silver_layer()
 
-    raw >> bronze >> silver
+    raw >> bronze >> silver >> sender_data
 
 
 f1_data_pipeline = formula_one_data_pipeline()

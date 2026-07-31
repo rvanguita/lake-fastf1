@@ -8,5 +8,8 @@ data
 mise.toml
 
 mlruns/
-img/*
+# img/*
 data/*
+
+*/feature_importances.md
+*/roc_curve.png
