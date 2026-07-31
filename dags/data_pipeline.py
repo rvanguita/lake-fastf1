@@ -21,7 +21,7 @@ from airflow.sdk import (
 from src.extract_data import ExtractData
 from src.spark_session import consolidate_data
 from src.silver_data import SilverData
-from src.sender import send_layer_to_mysql
+from src.sender_local import send_layer_to_mysql
 
 
 PATH_RAW = os.environ["PATH_RAW"]
