@@ -10,8 +10,8 @@ from src.spark_session import spark_session
 USER = os.environ["MYSQL_USER"]
 PASSWORD = os.environ["MYSQL_PASSWORD"]
 HOST = os.environ["MYSQL_HOST"]
-PORT = int(os.getenv("MYSQL_PORT", "3306"))
-ID_TABLE = os.getenv("MYSQL_ID_TABLE", "")
+PORT = int(os.environ["MYSQL_PORT"])
+ID_TABLE = os.environ["MYSQL_ID_TABLE"]
 
 
 def find_delta_tables(root_path: str | Path) -> list[Path]:

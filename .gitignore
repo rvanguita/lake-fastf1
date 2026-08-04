@@ -11,5 +11,6 @@ mlruns/
 # img/*
 data/*
 
+.airflow
 */feature_importances.md
 */roc_curve.png

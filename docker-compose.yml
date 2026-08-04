@@ -26,7 +26,7 @@ services:
     env_file:
       ./.env
     restart:  unless-stopped
-  streamlit-driver-champion:
+  streamlit:
     build:
       context: ./app/streamlit/
       dockerfile: Dockerfile
@@ -44,5 +44,4 @@ services:
     restart:  unless-stopped
     depends_on: 
       - "api-driver-champion"
-# volumes:
-#   airflow-data:
+      
