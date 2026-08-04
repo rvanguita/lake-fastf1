@@ -1,4 +1,22 @@
 services:
+  airflow:
+    user: "${AIRFLOW_UID:-50000}:0"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: standalone
+    ports:
+      - "${AIRFLOW_PORT}:${AIRFLOW_PORT}"
+    env_file:
+      - ./.env
+    environment:
+      TZ: America/Sao_Paulo
+      AIRFLOW_HOME: /opt/airflow/project/.airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/project/dags
+    working_dir: /opt/airflow/project
+    volumes:
+      - ./:/opt/airflow/project
+    restart: unless-stopped
   api-driver-champion:
     build:
       context: ./app/api/
@@ -15,8 +33,8 @@ services:
     ports:
       - "8501:8501"
     environment:
-      DELTA_TABLE_PATH_SILVER: "/data/silver/tb_abt"
-      DELTA_TABLE_PATH_BRONZE: "/data/bronze/results"
+      TABLE_PATH_SILVER: "/data/silver/tb_abt"
+      TABLE_PATH_BRONZE: "/data/bronze/results"
 
     volumes:
       - ./data/silver/tb_abt:/data/silver/tb_abt:ro
@@ -25,8 +43,5 @@ services:
       ./.env
     restart:  unless-stopped
     depends_on: 
-<<<<<<< Updated upstream
       - "api-driver-champion"
-=======
-      - "api-driver-champion"
->>>>>>> Stashed changes
+      

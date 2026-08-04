@@ -1,10 +1,11 @@
 # %%
 
-from src.spark_session import spark_session, spark_view_table, spark_save_table, read_sql_file
+from src.spark_session import spark_session
 
 
 import os
 import mlflow
+import mlflow.data
 
 import pandas as pd
 from sklearn import ensemble
@@ -45,14 +46,14 @@ df_row_round_year["row_number"] = (df_row_round_year
                                    .sort_values('dt_ref', ascending=False)
                                    .groupby(df["dt_ref"].dt.year)
                                    .cumcount())
-df_row_round_year = df_row_round_year[df_row_round_year['row_number'] >= 5]
+df_row_round_year = df_row_round_year[df_row_round_year['row_number'] > 4]
 df_row_round_year = df_row_round_year.drop('row_number', axis=1)
 df_row_round_year.shape
 # %%
 
 cols = list(df.columns)
 cols.insert(2, cols.pop(-1))
-# df = df[cols]
+df = df[cols]
 df.columns
 # %%
 df_sampling = pd.merge(df, df_row_round_year, on='dt_ref', how='inner')
@@ -150,5 +151,14 @@ with mlflow.start_run():
         name="RandomForest",
         skops_trusted_types=["numpy.dtype"]
     )
+
+    dataset = mlflow.data.from_pandas(
+        df,
+        name="tb_abt",
+        targets="flChampion",
+    )
+
+    # mlflow.log_input(dataset, context="training")
+
 
 # %%

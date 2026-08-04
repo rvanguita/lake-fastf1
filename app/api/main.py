@@ -1,30 +1,17 @@
 # %%
 import os
-from flask import Flask, request
 import mlflow
 import pandas as pd
+from flask import Flask, request
 
-import dotenv
-dotenv.load_dotenv()  # Load environment variables from .env file
-
-MLFLOW_URI = os.getenv("MLFLOW_URI")
-MLFLOW_MODEL_REGISTERED = os.getenv("MLFLOW_MODEL_REGISTERED")
-API_PORT = os.getenv("API_PORT")
+API_PORT = os.environ["API_PORT"]
+MLFLOW_URI = os.environ["MLFLOW_URI"]
+MLFLOW_MODEL_REGISTERED = os.environ["MLFLOW_MODEL_REGISTERED"]
 
 def model_find(model_id: str | None = None):
     try:
         mlflow.set_tracking_uri(MLFLOW_URI)
 
-<<<<<<< Updated upstream
-mlflow.set_tracking_uri(MLFLOW_URI)
-
-models = mlflow.search_registered_models(
-    filter_string=f"name='{MLFLOW_MODEL_REGISTERED}'")[-1]
-last_version = int(models.latest_versions[-1].version)
-MODEL = mlflow.sklearn.load_model(
-    f"models:/{MLFLOW_MODEL_REGISTERED}/{last_version}")
-
-=======
         models = mlflow.search_registered_models(
             filter_string=f"name='{model_id}'")[-1]
         last_version = int(models.latest_versions[-1].version)
@@ -33,7 +20,6 @@ MODEL = mlflow.sklearn.load_model(
     except Exception as e:
         return None 
     return model 
->>>>>>> Stashed changes
 # %%
 
 app = Flask(__name__)

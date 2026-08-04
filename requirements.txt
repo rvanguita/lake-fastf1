@@ -24,3 +24,9 @@ tabulate
 flask
 
 apache-airflow
+streamlit
+
+deltalake
+boto3
+pymysql
+sqlalchemy

@@ -1,14 +1,28 @@
-from __future__ import annotations
+"""Airflow DAG for the Formula 1 data pipeline.
+
+This workflow orchestrates the full ETL journey from raw FastF1 data
+extraction to Bronze and Silver transformations. It is designed as a
+long-term pipeline that will continue to evolve as data quality,
+performance, and analytical requirements improve.
+"""
 
 import os
 
-import pendulum
+from datetime import datetime
 
-from airflow.sdk import Asset, dag, get_current_context, task
+from airflow.sdk import (
+    Asset,
+    dag,
+    get_current_context,
+    task,
+    task_group,
+)
 
-from src.consolidate_data import consolidate_data
 from src.extract_data import ExtractData
-from src.silver_data import main as process_silver_data
+from src.spark_session import consolidate_data
+from src.silver_data import SilverData
+from src.sender_local import send_layer_to_mysql
+
 
 PATH_RAW = os.environ["PATH_RAW"]
 PATH_BRONZE = os.environ["PATH_BRONZE"]
@@ -16,7 +30,7 @@ PATH_SILVER = os.environ["PATH_SILVER"]
 
 
 # ---------------------------------------------------------------------------
-# Assets
+# Raw assets
 # ---------------------------------------------------------------------------
 
 RAW_RESULTS = Asset(
@@ -24,10 +38,20 @@ RAW_RESULTS = Asset(
     uri=f"file://{PATH_RAW}/results",
 )
 
+
+# ---------------------------------------------------------------------------
+# Bronze assets
+# ---------------------------------------------------------------------------
+
 BRONZE_RESULTS = Asset(
     name="bronze_results",
     uri=f"file://{PATH_BRONZE}/results",
 )
+
+
+# ---------------------------------------------------------------------------
+# Silver assets
+# ---------------------------------------------------------------------------
 
 SILVER_CHAMPIONS = Asset(
     name="silver_champions",
@@ -54,9 +78,9 @@ SILVER_DRIVER_STATISTIC_40 = Asset(
     uri=f"file://{PATH_SILVER}/driver_statistic_40",
 )
 
-SILVER_DRIVER_STATISTIC_LIFE = Asset(
-    name="silver_driver_statistic_life",
-    uri=f"file://{PATH_SILVER}/driver_statistic_life",
+SILVER_DRIVER_STATISTIC_50 = Asset(
+    name="silver_driver_statistic_50",
+    uri=f"file://{PATH_SILVER}/driver_statistic_50",
 )
 
 SILVER_DRIVER_ALL_STATISTIC = Asset(
@@ -76,84 +100,201 @@ SILVER_TB_ABT = Asset(
 
 @dag(
     dag_id="data-pipeline",
-    description="Pipeline Raw, Bronze e Silver",
+    description="Raw, Bronze, and Silver data pipeline",
     schedule="0 0 * * 1",
-    start_date=pendulum.datetime(
-        2026,
-        7,
-        28,
-        tz="America/Sao_Paulo",
-    ),
+    start_date=datetime(2026, 7, 28),
     catchup=False,
     max_active_runs=1,
     tags=["f1", "etl"],
 )
 def formula_one_data_pipeline() -> None:
 
-    @task(task_id="extract_fastf1",
-          outlets=[RAW_RESULTS],
-          )
-    def extract_fastf1() -> bool:
-        context = get_current_context()
-        execution_year = context["data_interval_end"].year
+    # -----------------------------------------------------------------------
+    # Raw
+    # -----------------------------------------------------------------------
 
-        extractor = ExtractData(
-            years=[execution_year],
-            identifiers=["R", "S"],
-            reload_data=False,
+    @task_group(group_id="raw")
+    def raw_layer() -> None:
+
+        @task(
+            task_id="extract_fastf1",
+            outlets=[RAW_RESULTS],
         )
+        def extract_fastf1() -> bool:
+            extractor = ExtractData()
+            return extractor.process_years()
 
-        return extractor.process_years()
+        # @task.short_circuit(task_id="has_new_data")
+        # def has_new_data(updated: bool) -> bool:
+        #     return updated
 
-    @task.short_circuit(task_id="has_new_data")
-    def has_new_data(updated: bool) -> bool:
-        return updated
+        extracted = extract_fastf1()
+        # has_new_data(extracted)
 
-    @task(
-        task_id="create_bronze_results",
-        inlets=[RAW_RESULTS],
-        outlets=[BRONZE_RESULTS],
-    )
-    def create_bronze_results() -> None:
-        consolidate_data("results")
+    # -----------------------------------------------------------------------
+    # Bronze
+    # -----------------------------------------------------------------------
 
-    @task(
-        task_id="create_silver_tables",
-        inlets=[BRONZE_RESULTS],
-        outlets=[
-            SILVER_CHAMPIONS,
-            SILVER_DRIVER_STATISTIC_5,
-            SILVER_DRIVER_STATISTIC_10,
-            SILVER_DRIVER_STATISTIC_20,
-            SILVER_DRIVER_STATISTIC_40,
-            SILVER_DRIVER_STATISTIC_LIFE,
-            SILVER_DRIVER_ALL_STATISTIC,
-            SILVER_TB_ABT,
-        ],
-    )
-    def create_silver_tables() -> None:
-        context = get_current_context()
-        execution_year = context["data_interval_end"].year
+    @task_group(group_id="bronze")
+    def bronze_layer() -> None:
 
-        process_silver_data(
-            year_stop=execution_year,
+        @task(
+            task_id="consolidated_results",
+            inlets=[RAW_RESULTS],
+            outlets=[BRONZE_RESULTS],
         )
-        
-    # -----------------------------------------------------------------------
-    # Instâncias das tasks
-    # -----------------------------------------------------------------------
-    
-    extracted = extract_fastf1()
-    validation = has_new_data(extracted)
-    bronze = create_bronze_results()
-    silver = create_silver_tables()
+        def create_results() -> None:
+            consolidate_data()
+
+        create_results()
 
     # -----------------------------------------------------------------------
-    # Ordem real de execução
+    # Silver
     # -----------------------------------------------------------------------
 
-    # validation >> bronze >> silver
-    bronze >> silver
+    @task_group(group_id="silver")
+    def silver_layer() -> None:
+
+        # -------------------------------------------------------------------
+        # Silver: Champions
+        # -------------------------------------------------------------------
+
+        @task_group(group_id="champions")
+        def champions_group() -> None:
+
+            @task(
+                task_id="create",
+                inlets=[BRONZE_RESULTS],
+                outlets=[SILVER_CHAMPIONS],
+            )
+            def create_champions() -> None:
+                silver_data = SilverData()
+                try:
+                    (silver_data
+                     .read_save_query("champions")
+                     )
+                finally:
+                    silver_data.stop()
+
+            create_champions()
+
+        # -------------------------------------------------------------------
+        # Silver: Driver statistics
+        # -------------------------------------------------------------------
+
+        @task_group(group_id="driver_statistics")
+        def driver_statistics_group() -> None:
+
+            @task(
+                task_id="rounds_driver_statistic",
+                inlets=[BRONZE_RESULTS],
+                outlets=[
+                    SILVER_DRIVER_STATISTIC_5,
+                    SILVER_DRIVER_STATISTIC_10,
+                    SILVER_DRIVER_STATISTIC_20,
+                    SILVER_DRIVER_STATISTIC_40,
+                    SILVER_DRIVER_STATISTIC_50,
+                ],)
+            def create_driver_statistic() -> None:
+                rounds = [5, 10, 20, 40, 50]
+                for round in rounds:
+                    silver_data = SilverData()
+                    try:
+                        query_name = "driver_statistic"
+
+                        silver_data.driver_n_race(
+                            query_name=query_name,
+                            round=round
+                        )
+                    finally:
+                        silver_data.stop()
+            create_driver_statistic()
+
+        # -------------------------------------------------------------------
+        # Silver: Consolidated driver statistics
+        # -------------------------------------------------------------------
+
+        @task_group(group_id="driver_all_statistic")
+        def driver_consolidate_statistic() -> None:
+
+            @task(
+                task_id="consolidate",
+                inlets=[
+                    SILVER_DRIVER_STATISTIC_5,
+                    SILVER_DRIVER_STATISTIC_10,
+                    SILVER_DRIVER_STATISTIC_20,
+                    SILVER_DRIVER_STATISTIC_40,
+                    SILVER_DRIVER_STATISTIC_50,
+                ],
+                outlets=[SILVER_DRIVER_ALL_STATISTIC],
+            )
+            def consolidate_driver_statistics() -> None:
+                silver_data = SilverData()
+                try:
+                    (silver_data
+                     .consolidate_drivers_statistic())
+                finally:
+                    silver_data.stop()
+
+            consolidate_driver_statistics()
+
+        # -------------------------------------------------------------------
+        # Silver: ABT
+        # -------------------------------------------------------------------
+
+        @task_group(group_id="abt")
+        def abt_group() -> None:
+
+            @task(
+                task_id="create",
+                inlets=[
+                    SILVER_CHAMPIONS,
+                    SILVER_DRIVER_ALL_STATISTIC,
+                ],
+                outlets=[SILVER_TB_ABT],
+            )
+            def create_abt() -> None:
+                silver_data = SilverData()
+                try:
+                    (silver_data
+                     .tb_abt())
+                finally:
+                    silver_data.stop()
+
+            create_abt()
+
+        champions = champions_group()
+        drivers_statistics_group = driver_statistics_group()
+        driver_all_statistic = driver_consolidate_statistic()
+        abt = abt_group()
+
+        champions
+        drivers_statistics_group >> driver_all_statistic
+        [champions, driver_all_statistic] >> abt
+
+    @task(task_id="sender_mysql")
+    def sender_mysql() -> None:
+        layers = {
+            "bronze": PATH_BRONZE,
+            "silver": PATH_SILVER,
+        }
+
+        for layer, path in layers.items():
+            send_layer_to_mysql(
+                layer=layer,
+                root_path=path,
+            )
+
+    # -----------------------------------------------------------------------
+    # Main flow
+    # -----------------------------------------------------------------------
+
+    raw = raw_layer()
+    bronze = bronze_layer()
+    silver = silver_layer()
+    sender_data = sender_mysql()
+
+    raw >> bronze >> silver >> sender_data
 
 
 f1_data_pipeline = formula_one_data_pipeline()
