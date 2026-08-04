@@ -9,3 +9,5 @@ mise.toml
 mlruns/
 img/*
 data/*
+
+.airflow
