@@ -1,3 +1,4 @@
+# %%
 import os
 from pyspark.sql import SparkSession
 from delta import configure_spark_with_delta_pip
@@ -30,7 +31,7 @@ def consolidate_data(data_set: str = "results"):
     df = (spark
           .read
           .format("parquet")
-          .load(f"{PATH_RAW}/{data_set}/*.{"parquet"}")
+          .load(f"{PATH_RAW}/{data_set}/*.parquet")
           )
     spark_save_table(f"{PATH_BRONZE}/{data_set}", df)
     spark.stop()

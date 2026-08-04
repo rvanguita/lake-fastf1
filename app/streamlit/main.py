@@ -1,4 +1,5 @@
 # %%
+import os 
 import pandas as pd
 import requests
 
@@ -6,12 +7,8 @@ import pandas as pd
 import streamlit as st
 from deltalake import DeltaTable
 
-import os 
-import dotenv
 
-dotenv.load_dotenv()
-
-URI_API = f"http://api-driver-champion:{os.getenv("API_PORT")}"
+URI_API = f"http://api-driver-champion:{os.environ['API_PORT']}"
 
 TABLE_PATH_SILVER = os.environ["TABLE_PATH_SILVER"]
 
