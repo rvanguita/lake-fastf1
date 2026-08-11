@@ -35,3 +35,14 @@ def consolidate_data(data_set: str = "results"):
           )
     spark_save_table(f"{PATH_BRONZE}/{data_set}", df)
     spark.stop()
+
+
+def main():
+    consolidate_data("results")
+
+
+# %%
+if __name__ == "__main__":
+    main()
+
+# %%

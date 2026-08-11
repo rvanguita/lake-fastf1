@@ -1,5 +1,5 @@
 # %%
-
+from datetime import datetime
 from src.spark_session import spark_session
 
 
@@ -46,7 +46,7 @@ df_row_round_year["row_number"] = (df_row_round_year
                                    .sort_values('dt_ref', ascending=False)
                                    .groupby(df["dt_ref"].dt.year)
                                    .cumcount())
-df_row_round_year = df_row_round_year[df_row_round_year['row_number'] > 4]
+df_row_round_year = df_row_round_year[df_row_round_year['row_number'] > 5]
 df_row_round_year = df_row_round_year.drop('row_number', axis=1)
 df_row_round_year.shape
 # %%
@@ -148,7 +148,7 @@ with mlflow.start_run():
 
     mlflow.sklearn.log_model(
         sk_model=model,
-        name="RandomForest",
+        name=f"RandomForest_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}",
         skops_trusted_types=["numpy.dtype"]
     )
 

@@ -14,25 +14,26 @@ fastf1.set_log_level(level=100)
 PATH_RAW = os.environ["PATH_RAW"]
 CURRENT_YEAR = datetime.now().year
 
+
 class ExtractData:
     def __init__(
-        self, 
-        years: list[int] = [CURRENT_YEAR], 
+        self,
+        years: list[int] = [CURRENT_YEAR],
         reload_data: bool = False,
-        identifiers: list[str] = ['R', 'S'], 
+        identifiers: list[str] = ['R', 'S'],
         base_data: str = "results"
     ) -> None:
 
         self.years = years
         if reload_data:
             self.years = [i for i in range(1980, CURRENT_YEAR)]
-            
+
         self.identifiers = identifiers
         self.reload_data = reload_data
         self.path_save_data = f"{PATH_RAW}/{base_data}"
 
         os.makedirs(self.path_save_data, exist_ok=True)
-        
+
     def get_data(self, year: int, gp: int, identifier: str) -> pd.DataFrame:
         try:
             session = fastf1.get_session(year, gp, identifier)
@@ -88,16 +89,18 @@ class ExtractData:
         for identifier in self.identifiers:
             for gp in range(1, 30):
                 new_data = self.process_data(year, gp, identifier)
-                if (not new_data and
-                        identifier == 'R'):
-                    return new_data
+                # if (not new_data and
+                #         identifier == 'R'):
+                #     return new_data
                 time.sleep(1)
         return new_data
-    
+
+
 def main():
     raw = ExtractData()
     new_data = raw.process_years()
     print(new_data)
+
 
 # %%
 if __name__ == "__main__":
