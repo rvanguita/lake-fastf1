@@ -1,13 +1,11 @@
 # %%
 import os
 import time
+from datetime import datetime
+from pathlib import Path
 
 import fastf1
 import pandas as pd
-from datetime import datetime
-
-from pathlib import Path
-from rich.progress import track
 
 fastf1.set_log_level(level=100)
 
@@ -20,8 +18,8 @@ class ExtractData:
         self,
         years: list[int] = [CURRENT_YEAR],
         reload_data: bool = False,
-        identifiers: list[str] = ['R', 'S'],
-        base_data: str = "results"
+        identifiers: list[str] = ["R", "S"],
+        base_data: str = "results",
     ) -> None:
 
         self.years = years
@@ -37,7 +35,7 @@ class ExtractData:
     def get_data(self, year: int, gp: int, identifier: str) -> pd.DataFrame:
         try:
             session = fastf1.get_session(year, gp, identifier)
-        except ValueError as err:
+        except ValueError:
             empty = pd.DataFrame()
             return empty
 
@@ -57,16 +55,15 @@ class ExtractData:
         df["Country"] = session.event["Country"]
         df["Location"] = session.event["Location"]
 
-        df["Date"] = df["Date"].astype('datetime64[us]')
-        columns_names = ['Q1', 'Q2', 'Q3', 'Time']
+        df["Date"] = df["Date"].astype("datetime64[us]")
+        columns_names = ["Q1", "Q2", "Q3", "Time"]
         for i in columns_names:
             df[i] = df[i].dt.total_seconds()
         return df
 
     def process_data(self, year: int, gp: int, identifier: str) -> bool:
         filename = f"{self.path_save_data}/{year}_{(gp):02}_{identifier}.parquet"
-        if (Path(filename).is_file() and
-                not self.reload_data):
+        if Path(filename).is_file() and not self.reload_data:
             return False
 
         df = self.get_data(year, gp, identifier)

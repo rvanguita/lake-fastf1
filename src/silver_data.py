@@ -6,7 +6,7 @@ from functools import reduce
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
-from src.spark_session import spark_session, spark_save_table
+from src.spark_session import spark_save_table, spark_session
 
 CURRENT_YEAR = datetime.now().year
 
@@ -16,7 +16,7 @@ PATH_SILVER = os.environ["PATH_SILVER"]
 PATH_BRONZE = os.environ["PATH_BRONZE"]
 
 
-class SilverData():
+class SilverData:
     def __init__(self) -> None:
         self.spark = spark_session()
         self.spark_view_table(f"{PATH_BRONZE}/results", "results")
@@ -25,47 +25,33 @@ class SilverData():
         self.spark.stop()
 
     def spark_view_table(self, path, table_name):
-        table_view = (self.spark
-                      .read
-                      .format("delta")
-                      .load(path)
-                      )
+        table_view = self.spark.read.format("delta").load(path)
         table_view.createOrReplaceTempView(table_name)
 
-    def read_save_query(
-        self,
-        query_name: str
-    ) -> None:
+    def read_save_query(self, query_name: str) -> None:
         query = self.read_sql_file(query_name)
         df = self.spark.sql(query)
 
         spark_save_table(f"{PATH_SILVER}/{query_name}", df)
 
-    def driver_n_race(
-        self,
-        query_name: str,
-        round: int
-    ) -> None:
+    def driver_n_race(self, query_name: str, round: int) -> None:
         query = self.read_sql_file(query_name)
-        df = (self.spark
-                  .sql(query.format(year_start=1980,
-                                    year_stop=CURRENT_YEAR,
-                                    last_rounds=round)))
+        df = self.spark.sql(
+            query.format(year_start=1980, year_stop=CURRENT_YEAR, last_rounds=round)
+        )
 
-        spark_save_table(
-            f"{PATH_SILVER}/{query_name}_{round}", df)
+        spark_save_table(f"{PATH_SILVER}/{query_name}_{round}", df)
 
     def consolidate_drivers_statistic(
         self,
         rounds: list[int] = [5, 10, 20, 40, 50],
-        table_name: str = "driver_all_statistic"
+        table_name: str = "driver_all_statistic",
     ) -> None:
         df_all = []
 
         for round in rounds:
             self.spark_view_table(
-                f"{PATH_SILVER}/driver_statistic_{round}",
-                f"driver_statistic_{round}"
+                f"{PATH_SILVER}/driver_statistic_{round}", f"driver_statistic_{round}"
             )
 
             df = self.spark.table(f"driver_statistic_{round}")
@@ -85,9 +71,7 @@ class SilverData():
             ),
             df_all,
         )
-        spark_save_table(
-            f"{PATH_SILVER}/{table_name}",
-            driver_features)
+        spark_save_table(f"{PATH_SILVER}/{table_name}", driver_features)
 
     def add_suffix(
         self,
@@ -115,7 +99,7 @@ class SilverData():
         self.read_save_query("tb_abt")
 
     def read_sql_file(self, query_name):
-        with open(f'{PATH_QUERIES}/{query_name}.sql', 'r') as file:
+        with open(f"{PATH_QUERIES}/{query_name}.sql", "r") as file:
             query = file.read()
         return query
 
@@ -138,8 +122,7 @@ def main():
     silver_data.driver_n_race(query_name, rounds[4])
 
     # silver_data = SilverData()
-    (silver_data
-     .consolidate_drivers_statistic())
+    (silver_data.consolidate_drivers_statistic())
 
     # silver_data = SilverData()
     silver_data.tb_abt()
