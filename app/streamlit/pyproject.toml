@@ -1,0 +1,17 @@
+[project]
+name = "f1-dashboard"
+version = "0.1.0"
+description = "F1 Champion Win Predictor — Streamlit dashboard"
+requires-python = ">=3.13"
+dependencies = [
+    "deltalake>=1.6.2",
+    "pandas>=2.0.0,<3.0.0",
+    "plotly>=5.0.0",
+    "requests>=2.31.0",
+    "streamlit>=1.61.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
