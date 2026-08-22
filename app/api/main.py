@@ -1,60 +1,61 @@
-# %%
 import os
+
 import mlflow
 import pandas as pd
-from flask import Flask, request
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
-API_PORT = os.environ["API_PORT"]
+API_PORT = int(os.environ["API_PORT"])
 MLFLOW_URI = os.environ["MLFLOW_URI"]
 MLFLOW_MODEL_REGISTERED = os.environ["MLFLOW_MODEL_REGISTERED"]
+
 
 def model_find(model_id: str | None = None):
     try:
         mlflow.set_tracking_uri(MLFLOW_URI)
-
-        models = mlflow.search_registered_models(
-            filter_string=f"name='{model_id}'")[-1]
+        models = mlflow.search_registered_models(filter_string=f"name='{model_id}'")[-1]
         last_version = int(models.latest_versions[-1].version)
-        model = mlflow.sklearn.load_model(
-            f"models:/{model_id}/{last_version}")
-    except Exception as e:
-        return None 
-    return model 
-# %%
-
-app = Flask(__name__)
+        model = mlflow.sklearn.load_model(f"models:/{model_id}/{last_version}")
+    except Exception:
+        return None
+    return model
 
 
-@app.route('/health_check')
+class PredictRequest(BaseModel):
+    values: list[dict]
+
+
+app = FastAPI(
+    title="F1 Driver Champion API",
+    description="Predicts championship win probability for F1 drivers.",
+    version="1.0.0",
+)
+
+
+@app.get("/health_check", tags=["health"])
 def health_check():
-    return "OK", 200
+    return {"status": "OK"}
 
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    
+@app.post("/predict", tags=["model"])
+def predict(body: PredictRequest):
     model = model_find(MLFLOW_MODEL_REGISTERED)
     if model is None:
-        return {"error": "Model not found"}, 500
+        raise HTTPException(status_code=500, detail="Model not found")
 
-    payload = request.get_json()
-    data = payload.get('values', [])
-    if len(data) == 0:
-        return {"error": "No features provided"}, 400
+    if not body.values:
+        raise HTTPException(status_code=400, detail="No features provided")
 
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(body.values)
     X = df[model.feature_names_in_]
 
     df_proba = pd.DataFrame(model.predict_proba(X), columns=model.classes_)
-    df_proba['id'] = df['id'].copy()
-    df_proba.set_index('id', inplace=True)
+    df_proba["id"] = df["id"].copy()
+    df_proba.set_index("id", inplace=True)
 
-    payload = df_proba.to_dict(orient='index')
-
-    return {"predictions": payload}, 200
+    return {"predictions": df_proba.to_dict(orient="index")}
 
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=API_PORT)
-
-# %%
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=API_PORT)
