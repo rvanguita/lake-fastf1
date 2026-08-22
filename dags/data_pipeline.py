@@ -7,22 +7,19 @@ performance, and analytical requirements improve.
 """
 
 import os
-
 from datetime import datetime
 
 from airflow.sdk import (
     Asset,
     dag,
-    get_current_context,
     task,
     task_group,
 )
 
 from src.extract_data import ExtractData
-from src.spark_session import consolidate_data
-from src.silver_data import SilverData
 from src.sender_local import send_layer_to_mysql
-
+from src.silver_data import SilverData
+from src.spark_session import consolidate_data
 
 PATH_RAW = os.environ["PATH_RAW"]
 PATH_BRONZE = os.environ["PATH_BRONZE"]
@@ -98,6 +95,7 @@ SILVER_TB_ABT = Asset(
 # DAG
 # ---------------------------------------------------------------------------
 
+
 @dag(
     dag_id="data-pipeline",
     description="Raw, Bronze, and Silver data pipeline",
@@ -170,9 +168,7 @@ def formula_one_data_pipeline() -> None:
             def create_champions() -> None:
                 silver_data = SilverData()
                 try:
-                    (silver_data
-                     .read_save_query("champions")
-                     )
+                    (silver_data.read_save_query("champions"))
                 finally:
                     silver_data.stop()
 
@@ -194,7 +190,8 @@ def formula_one_data_pipeline() -> None:
                     SILVER_DRIVER_STATISTIC_20,
                     SILVER_DRIVER_STATISTIC_40,
                     SILVER_DRIVER_STATISTIC_50,
-                ],)
+                ],
+            )
             def create_driver_statistic() -> None:
                 rounds = [5, 10, 20, 40, 50]
                 for round in rounds:
@@ -202,12 +199,10 @@ def formula_one_data_pipeline() -> None:
                     try:
                         query_name = "driver_statistic"
 
-                        silver_data.driver_n_race(
-                            query_name=query_name,
-                            round=round
-                        )
+                        silver_data.driver_n_race(query_name=query_name, round=round)
                     finally:
                         silver_data.stop()
+
             create_driver_statistic()
 
         # -------------------------------------------------------------------
@@ -231,8 +226,7 @@ def formula_one_data_pipeline() -> None:
             def consolidate_driver_statistics() -> None:
                 silver_data = SilverData()
                 try:
-                    (silver_data
-                     .consolidate_drivers_statistic())
+                    (silver_data.consolidate_drivers_statistic())
                 finally:
                     silver_data.stop()
 
@@ -256,8 +250,7 @@ def formula_one_data_pipeline() -> None:
             def create_abt() -> None:
                 silver_data = SilverData()
                 try:
-                    (silver_data
-                     .tb_abt())
+                    (silver_data.tb_abt())
                 finally:
                     silver_data.stop()
 
