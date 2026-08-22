@@ -3,8 +3,8 @@
 import argparse
 import os
 
-import dotenv
 import boto3
+import dotenv
 from rich.progress import track
 
 dotenv.load_dotenv()
@@ -13,17 +13,18 @@ AWS_KEY = os.getenv("AWS_KEY")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY")
 PATH_RAW = os.getenv("PATH_RAW")
 
-class Sender:
 
+class Sender:
     def __init__(self, bucket_name, bucket_folder):
         self.bucket_name = bucket_name
         self.bucket_folder = bucket_folder
-        
-        self.s3 = boto3.client("s3",
-                        aws_access_key_id=AWS_KEY,
-                        aws_secret_access_key=AWS_SECRET_KEY,
-                        region_name="us-east-1")
 
+        self.s3 = boto3.client(
+            "s3",
+            aws_access_key_id=AWS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+            region_name="us-east-1",
+        )
 
     def process_file(self, filename):
 
@@ -31,17 +32,14 @@ class Sender:
         bucket_path = os.path.join(self.bucket_folder, file)
 
         try:
-            self.s3.upload_file(filename,
-                                self.bucket_name,
-                                bucket_path)
-            
+            self.s3.upload_file(filename, self.bucket_name, bucket_path)
+
         except Exception as err:
             print(err)
             return False
 
         os.remove(filename)
         return True
-
 
     def process_folder(self, folder):
         files = [i for i in os.listdir(folder) if i.endswith(".parquet")]
@@ -52,10 +50,9 @@ class Sender:
 # %%
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--bucket", type=str)
-    parser.add_argument("--bucket_path",default="results", type=str)
+    parser.add_argument("--bucket_path", default="results", type=str)
     parser.add_argument("--folder", default=PATH_RAW, type=str)
     args = parser.parse_args()
 
