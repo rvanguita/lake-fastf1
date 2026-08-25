@@ -146,7 +146,8 @@ The Streamlit dashboard (`http://localhost:8501`) provides a full view of the F1
 | Section | Description |
 |---|---|
 | 🥇🥈🥉 KPI cards | Top-3 drivers by latest predicted win probability, with Δ vs previous race |
-| 🏆 Recent race results | Top-5 finishers for the last 5 GPs, side-by-side, colored by team |
+| 📊 Season snapshot | Rounds completed, points leader, championship gap, most wins, biggest grid → finish mover |
+| 🏆 Recent race results | Top-5 finishers per GP as bordered cards (adjustable 3–10 races), with podium medals, points and grid → finish movement (▲/▼) per driver |
 
 **Filters:** driver multi-select (defaults to top-5 by probability) and season selector.
 
@@ -158,6 +159,8 @@ The Streamlit dashboard (`http://localhost:8501`) provides a full view of the F1
 | 🏅 Points Ranking | Horizontal bar chart of accumulated championship points for the season |
 | 📊 Season Progression | Cumulative points line chart across rounds — shows momentum per driver |
 | 🗺️ Position Heatmap | Driver × race grid colored by finishing position (green = front, red = back) |
+| 🧑‍🚀 Driver Stats | Full season table — races, wins, podiums, poles, DNFs, points, best/avg finish, avg grid, avg places gained/lost, podium rate |
+| 🏗️ Constructors | Constructors' championship — points bar chart plus wins/podiums/points table |
 | 📋 Data | Win probability pivot table + full feature table (expandable) |
 
 ## API
