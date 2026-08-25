@@ -112,25 +112,75 @@ def render_kpi_row(data: pd.DataFrame) -> None:
         )
 
 
+def render_season_snapshot(bronze: pd.DataFrame, year: int) -> None:
+    """Quick-glance season KPIs derived from actual race results."""
+    races = bronze[(bronze["Mode"] == "Race") & (bronze["Year"] == year)].copy()
+    if races.empty:
+        return
+
+    races["Position"] = pd.to_numeric(races["Position"], errors="coerce")
+    races["GridPosition"] = pd.to_numeric(races["GridPosition"], errors="coerce")
+
+    rounds_completed = races["RoundNumber"].nunique()
+
+    points_by_driver = races.groupby("FullName")["Points"].sum().sort_values(ascending=False)
+    leader = points_by_driver.index[0] if not points_by_driver.empty else "—"
+    leader_pts = points_by_driver.iloc[0] if not points_by_driver.empty else 0.0
+    gap = leader_pts - points_by_driver.iloc[1] if len(points_by_driver) > 1 else 0.0
+
+    wins_by_driver = races.loc[races["Position"] == 1, "FullName"].value_counts()
+    most_wins_driver = wins_by_driver.index[0] if not wins_by_driver.empty else "—"
+    most_wins = int(wins_by_driver.iloc[0]) if not wins_by_driver.empty else 0
+
+    latest_round = races["RoundNumber"].max()
+    latest_race = races[races["RoundNumber"] == latest_round].copy()
+    latest_race["Gain"] = latest_race["GridPosition"] - latest_race["Position"]
+    gains = latest_race.dropna(subset=["Gain"])
+    if not gains.empty:
+        mover_row = gains.loc[gains["Gain"].idxmax()]
+        mover_str = f"{mover_row['Abbreviation']} ({mover_row['Gain']:+.0f})"
+    else:
+        mover_str = "—"
+
+    st.markdown(f"### 📊 {year} Season Snapshot")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("🏁 Rounds Completed", int(rounds_completed))
+    c2.metric("👑 Points Leader", leader, help=f"{leader_pts:.0f} pts")
+    c3.metric("📏 Championship Gap", f"{gap:.0f} pts", help=f"{leader} vs P2")
+    c4.metric("🥇 Most Wins", f"{most_wins_driver} ({most_wins})")
+    c5.metric("🚀 Biggest Mover", mover_str, help="Grid → Finish, last race")
+
+
 def render_recent_races(bronze: pd.DataFrame, n: int = N_RECENT_RACES) -> None:
-    """Top-5 finishers for each of the last N race rounds."""
+    """Top-5 finishers for each of the last N race rounds, with grid → finish movement."""
     races = (
         bronze[bronze["Mode"] == "Race"]
         .dropna(subset=["Position"])
         .copy()
     )
     races["Position"] = races["Position"].astype(int)
+    races["GridPosition"] = pd.to_numeric(races["GridPosition"], errors="coerce")
 
     # last N unique rounds by date
     recent_rounds = (
         races.drop_duplicates(subset=["Year", "RoundNumber"])
         .sort_values("Date", ascending=False)
-        .head(n)[["Year", "RoundNumber", "EventName", "Date"]]
+        .head(n)[["Year", "RoundNumber", "EventName", "Date", "Country"]]
     )
 
-    st.markdown(f"### 🏆 Last {n} Race Results — Top 5")
+    header_col, ctrl_col = st.columns([3, 1])
+    header_col.markdown(f"### 🏆 Last {n} Race Results")
+    n_selected = ctrl_col.slider(
+        "Races shown", min_value=3, max_value=10, value=n, key="n_recent_races"
+    )
+    if n_selected != n:
+        recent_rounds = (
+            races.drop_duplicates(subset=["Year", "RoundNumber"])
+            .sort_values("Date", ascending=False)
+            .head(n_selected)[["Year", "RoundNumber", "EventName", "Date", "Country"]]
+        )
 
-    cols = st.columns(n)
+    cols = st.columns(len(recent_rounds))
     for col, (_, rnd) in zip(cols, recent_rounds.iterrows()):
         top5 = (
             races[
@@ -139,22 +189,164 @@ def render_recent_races(bronze: pd.DataFrame, n: int = N_RECENT_RACES) -> None:
                 & (races["Position"] <= 5)
             ]
             .sort_values("Position")[
-                ["Position", "Abbreviation", "TeamName", "TeamColor", "Points"]
+                ["Position", "GridPosition", "Abbreviation", "TeamName", "TeamColor", "Points"]
             ]
             .reset_index(drop=True)
         )
 
-        race_date = pd.to_datetime(rnd["Date"]).strftime("%b %d")
-        col.markdown(f"**{rnd['EventName']}**  \n`{race_date}`")
+        race_date = pd.to_datetime(rnd["Date"]).strftime("%b %d, %Y")
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
 
-        for _, driver in top5.iterrows():
-            color = driver["TeamColor"] if driver["TeamColor"] else "#888888"
-            col.markdown(
-                f"<span style='color:{color}; font-weight:600'>"
-                f"P{int(driver['Position'])} {driver['Abbreviation']}</span>"
-                f" <span style='font-size:0.8em; color:#aaa'>({driver['TeamName']})</span>",
-                unsafe_allow_html=True,
-            )
+        with col.container(border=True):
+            st.markdown(f"**{rnd['EventName']}**")
+            st.caption(f"{rnd.get('Country', '')} · {race_date}")
+
+            for _, driver in top5.iterrows():
+                pos = int(driver["Position"])
+                color = driver["TeamColor"] if driver["TeamColor"] else "#888888"
+                label = medals.get(pos, f"P{pos}")
+                weight = 700 if pos == 1 else 500
+
+                grid = driver["GridPosition"]
+                delta_html = "<span style='font-size:0.75em;color:#888'>–</span>"
+                if pd.notna(grid):
+                    delta = int(grid) - pos
+                    if delta > 0:
+                        delta_html = f"<span style='font-size:0.75em;color:#2ecc71'>▲{delta}</span>"
+                    elif delta < 0:
+                        delta_html = f"<span style='font-size:0.75em;color:#e74c3c'>▼{abs(delta)}</span>"
+
+                st.markdown(
+                    "<div style='display:flex;justify-content:space-between;"
+                    "align-items:center;padding:2px 0'>"
+                    f"<span style='color:{color};font-weight:{weight}'>"
+                    f"{label} {driver['Abbreviation']}</span>"
+                    f"<span style='font-size:0.8em;color:#aaa'>"
+                    f"{driver['Points']:.0f} pts&nbsp;{delta_html}</span>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+
+
+# ── Statistics tables ───────────────────────────────────────────────────────
+
+def compute_driver_stats(bronze: pd.DataFrame, year: int) -> pd.DataFrame:
+    """Per-driver season aggregates: wins, podiums, poles, DNFs, pace metrics."""
+    races = bronze[(bronze["Mode"] == "Race") & (bronze["Year"] == year)].copy()
+    if races.empty:
+        return pd.DataFrame()
+
+    races["Position"] = pd.to_numeric(races["Position"], errors="coerce")
+    races["GridPosition"] = pd.to_numeric(races["GridPosition"], errors="coerce")
+    races["DNF"] = races["ClassifiedPosition"] == "R"
+
+    stats = races.groupby(["FullName", "TeamName", "TeamColor"], as_index=False).agg(
+        Races=("RoundNumber", "nunique"),
+        Points=("Points", "sum"),
+        Wins=("Position", lambda s: int((s == 1).sum())),
+        Podiums=("Position", lambda s: int((s <= 3).sum())),
+        Poles=("GridPosition", lambda s: int((s == 1).sum())),
+        DNFs=("DNF", "sum"),
+        AvgFinish=("Position", "mean"),
+        AvgGrid=("GridPosition", "mean"),
+        BestFinish=("Position", "min"),
+    )
+    stats["AvgGain"] = stats["AvgGrid"] - stats["AvgFinish"]
+    stats["PodiumRate"] = stats["Podiums"] / stats["Races"]
+    stats = stats.sort_values("Points", ascending=False).reset_index(drop=True)
+    stats.insert(0, "Rank", stats.index + 1)
+    return stats
+
+
+def render_driver_stats_table(bronze: pd.DataFrame, year: int) -> None:
+    """Full driver statistics table for the selected season."""
+    stats = compute_driver_stats(bronze, year)
+    if stats.empty:
+        st.info("No race data for this season.")
+        return
+
+    st.dataframe(
+        stats[
+            ["Rank", "FullName", "TeamName", "Races", "Wins", "Podiums", "Poles",
+             "DNFs", "Points", "BestFinish", "AvgFinish", "AvgGrid", "AvgGain", "PodiumRate"]
+        ],
+        column_config={
+            "Rank": st.column_config.NumberColumn("#"),
+            "FullName": st.column_config.TextColumn("Driver"),
+            "TeamName": st.column_config.TextColumn("Team"),
+            "Races": st.column_config.NumberColumn("Races"),
+            "Wins": st.column_config.NumberColumn("🏆 Wins"),
+            "Podiums": st.column_config.NumberColumn("🥇 Podiums"),
+            "Poles": st.column_config.NumberColumn("🎯 Poles"),
+            "DNFs": st.column_config.NumberColumn("❌ DNFs"),
+            "Points": st.column_config.NumberColumn("Points", format="%.0f"),
+            "BestFinish": st.column_config.NumberColumn("Best", format="%.0f"),
+            "AvgFinish": st.column_config.NumberColumn("Avg Finish", format="%.1f"),
+            "AvgGrid": st.column_config.NumberColumn("Avg Grid", format="%.1f"),
+            "AvgGain": st.column_config.NumberColumn("Avg +/- Places", format="%.1f"),
+            "PodiumRate": st.column_config.ProgressColumn(
+                "Podium Rate", format="%.0f%%", min_value=0, max_value=1
+            ),
+        },
+        hide_index=True,
+        width="stretch",
+        height=min(38 * (len(stats) + 1) + 3, 700),
+    )
+
+
+def compute_team_stats(bronze: pd.DataFrame, year: int) -> pd.DataFrame:
+    """Per-constructor season aggregates."""
+    races = bronze[(bronze["Mode"] == "Race") & (bronze["Year"] == year)].copy()
+    if races.empty:
+        return pd.DataFrame()
+
+    races["Position"] = pd.to_numeric(races["Position"], errors="coerce")
+    stats = races.groupby(["TeamName", "TeamColor"], as_index=False).agg(
+        Points=("Points", "sum"),
+        Wins=("Position", lambda s: int((s == 1).sum())),
+        Podiums=("Position", lambda s: int((s <= 3).sum())),
+    )
+    stats = stats.sort_values("Points", ascending=False).reset_index(drop=True)
+    stats.insert(0, "Rank", stats.index + 1)
+    return stats
+
+
+def render_team_stats(bronze: pd.DataFrame, year: int) -> None:
+    """Constructors' championship — bar chart + table."""
+    stats = compute_team_stats(bronze, year)
+    if stats.empty:
+        st.info("No race data for this season.")
+        return
+
+    fig = px.bar(
+        stats.sort_values("Points"),
+        x="Points",
+        y="TeamName",
+        orientation="h",
+        color="TeamName",
+        color_discrete_map={row["TeamName"]: row["TeamColor"] for _, row in stats.iterrows()},
+        template="plotly_dark",
+        labels={"TeamName": "", "Points": "Constructor Points"},
+    )
+    fig.update_layout(
+        height=max(300, len(stats) * 40),
+        margin={"t": 10, "b": 10, "l": 10},
+        showlegend=False,
+    )
+    st.plotly_chart(fig, width="stretch")
+
+    st.dataframe(
+        stats[["Rank", "TeamName", "Wins", "Podiums", "Points"]],
+        column_config={
+            "Rank": st.column_config.NumberColumn("#"),
+            "TeamName": st.column_config.TextColumn("Team"),
+            "Wins": st.column_config.NumberColumn("🏆 Wins"),
+            "Podiums": st.column_config.NumberColumn("🥇 Podiums"),
+            "Points": st.column_config.NumberColumn("Points", format="%.0f"),
+        },
+        hide_index=True,
+        width="stretch",
+    )
 
 
 def render_points_bar(bronze: pd.DataFrame, year: int) -> None:
@@ -332,6 +524,11 @@ def main() -> None:
     render_kpi_row(data)
     st.divider()
 
+    # ── Season snapshot ───────────────────────────────────────────────────────
+    current_year = int(bronze[bronze["Mode"] == "Race"]["Year"].max())
+    render_season_snapshot(bronze, current_year)
+    st.divider()
+
     # ── Recent race results ───────────────────────────────────────────────────
     render_recent_races(bronze)
     st.divider()
@@ -387,8 +584,16 @@ def main() -> None:
     column_config_pivot["dt_ref"] = st.column_config.DateColumn("Prediction Date")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_prob, tab_points, tab_progression, tab_heatmap, tab_data = st.tabs(
-        ["📈 Win Probability", "🏅 Points Ranking", "📊 Season Progression", "🗺️ Position Heatmap", "📋 Data"]
+    tab_prob, tab_points, tab_progression, tab_heatmap, tab_drivers, tab_teams, tab_data = st.tabs(
+        [
+            "📈 Win Probability",
+            "🏅 Points Ranking",
+            "📊 Season Progression",
+            "🗺️ Position Heatmap",
+            "🧑‍🚀 Driver Stats",
+            "🏗️ Constructors",
+            "📋 Data",
+        ]
     )
 
     with tab_prob:
@@ -405,6 +610,14 @@ def main() -> None:
     with tab_heatmap:
         sel_year = year_selected[0] if year_selected else int(data["Year"].max())
         render_head_to_head(bronze, sel_year)
+
+    with tab_drivers:
+        sel_year = year_selected[0] if year_selected else int(data["Year"].max())
+        render_driver_stats_table(bronze, sel_year)
+
+    with tab_teams:
+        sel_year = year_selected[0] if year_selected else int(data["Year"].max())
+        render_team_stats(bronze, sel_year)
 
     with tab_data:
         st.markdown("#### Win probability by race")
