@@ -137,13 +137,28 @@ STREAMLIT_PORT=8501
 
 ## Dashboard
 
-The Streamlit dashboard shows predicted championship win probabilities per driver, updated after each race.
+The Streamlit dashboard (`http://localhost:8501`) provides a full view of the F1 season — from raw race results to ML-based championship predictions.
 
-Features:
-- **KPI row** — top-3 drivers with their latest win probability.
-- **Interactive Plotly chart** — win probability over time per driver, colored by team, with hover tooltips.
-- **Data tab** — pivot table of win probabilities and full feature table.
-- Driver and season multi-select filters.
+### Layout
+
+**Top of page — always visible:**
+
+| Section | Description |
+|---|---|
+| 🥇🥈🥉 KPI cards | Top-3 drivers by latest predicted win probability, with Δ vs previous race |
+| 🏆 Recent race results | Top-5 finishers for the last 5 GPs, side-by-side, colored by team |
+
+**Filters:** driver multi-select (defaults to top-5 by probability) and season selector.
+
+**Tabs:**
+
+| Tab | Content |
+|---|---|
+| 📈 Win Probability | Plotly line chart — win % over time per driver, team colors, unified hover |
+| 🏅 Points Ranking | Horizontal bar chart of accumulated championship points for the season |
+| 📊 Season Progression | Cumulative points line chart across rounds — shows momentum per driver |
+| 🗺️ Position Heatmap | Driver × race grid colored by finishing position (green = front, red = back) |
+| 📋 Data | Win probability pivot table + full feature table (expandable) |
 
 ## API
 
