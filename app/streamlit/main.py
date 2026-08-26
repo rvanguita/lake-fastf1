@@ -30,6 +30,24 @@ def get_id_predictions(values: pd.DataFrame):
     return resp.json().get("predictions")
 
 
+def _rank_by(df: pd.DataFrame, col: str = "Points") -> pd.DataFrame:
+    """Sort descending by `col` and insert a 1-based Rank column."""
+    df = df.sort_values(col, ascending=False).reset_index(drop=True)
+    df.insert(0, "Rank", df.index + 1)
+    return df
+
+
+def _color_map(
+    df: pd.DataFrame, key_col: str, color_col: str = "TeamColor", keep: str = "last"
+) -> dict:
+    """Build a {key: color} lookup, one entry per unique key_col value."""
+    return (
+        df.drop_duplicates(subset=key_col, keep=keep)[[key_col, color_col]]
+        .set_index(key_col)[color_col]
+        .to_dict()
+    )
+
+
 # ── Data loaders ─────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl="1d")
@@ -240,7 +258,9 @@ def compute_driver_stats(bronze: pd.DataFrame, year: int) -> pd.DataFrame:
     races["GridPosition"] = pd.to_numeric(races["GridPosition"], errors="coerce")
     races["DNF"] = races["ClassifiedPosition"] == "R"
 
-    stats = races.groupby(["FullName", "TeamName", "TeamColor"], as_index=False).agg(
+    stats = races.groupby(
+        ["FullName", "TeamName", "TeamColor", "Abbreviation"], as_index=False
+    ).agg(
         Races=("RoundNumber", "nunique"),
         Points=("Points", "sum"),
         Wins=("Position", lambda s: int((s == 1).sum())),
@@ -253,9 +273,7 @@ def compute_driver_stats(bronze: pd.DataFrame, year: int) -> pd.DataFrame:
     )
     stats["AvgGain"] = stats["AvgGrid"] - stats["AvgFinish"]
     stats["PodiumRate"] = stats["Podiums"] / stats["Races"]
-    stats = stats.sort_values("Points", ascending=False).reset_index(drop=True)
-    stats.insert(0, "Rank", stats.index + 1)
-    return stats
+    return _rank_by(stats)
 
 
 def render_driver_stats_table(bronze: pd.DataFrame, year: int) -> None:
@@ -306,9 +324,7 @@ def compute_team_stats(bronze: pd.DataFrame, year: int) -> pd.DataFrame:
         Wins=("Position", lambda s: int((s == 1).sum())),
         Podiums=("Position", lambda s: int((s <= 3).sum())),
     )
-    stats = stats.sort_values("Points", ascending=False).reset_index(drop=True)
-    stats.insert(0, "Rank", stats.index + 1)
-    return stats
+    return _rank_by(stats)
 
 
 def render_team_stats(bronze: pd.DataFrame, year: int) -> None:
@@ -319,19 +335,33 @@ def render_team_stats(bronze: pd.DataFrame, year: int) -> None:
         return
 
     fig = px.bar(
-        stats.sort_values("Points"),
+        stats.sort_values("Points", ascending=True),
         x="Points",
         y="TeamName",
         orientation="h",
         color="TeamName",
-        color_discrete_map={row["TeamName"]: row["TeamColor"] for _, row in stats.iterrows()},
+        color_discrete_map=_color_map(stats, "TeamName"),
+        text="Points",
         template="plotly_dark",
         labels={"TeamName": "", "Points": "Constructor Points"},
+    )
+    fig.update_traces(
+        texttemplate="%{text:.0f}",
+        textposition="outside",
+        cliponaxis=False,
     )
     fig.update_layout(
         height=max(300, len(stats) * 40),
         margin={"t": 10, "b": 10, "l": 10},
         showlegend=False,
+        bargap=0.35,
+        xaxis={
+            "showgrid": True,
+            "gridcolor": "rgba(255,255,255,0.08)",
+            "zeroline": False,
+            "range": [0, stats["Points"].max() * 1.08],
+        },
+        yaxis={"showgrid": False},
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -371,17 +401,28 @@ def render_points_bar(bronze: pd.DataFrame, year: int) -> None:
         y="FullName",
         orientation="h",
         color="TeamName",
-        color_discrete_map={
-            row["TeamName"]: row["TeamColor"]
-            for _, row in points_total.iterrows()
-        },
+        color_discrete_map=_color_map(points_total, "TeamName"),
+        text="Points",
         template="plotly_dark",
         labels={"FullName": "", "Points": "Championship Points"},
+    )
+    fig.update_traces(
+        texttemplate="%{text:.0f}",
+        textposition="outside",
+        cliponaxis=False,
     )
     fig.update_layout(
         height=max(350, len(points_total) * 28),
         margin={"t": 10, "b": 10, "l": 10},
         showlegend=False,
+        bargap=0.35,
+        xaxis={
+            "showgrid": True,
+            "gridcolor": "rgba(255,255,255,0.08)",
+            "zeroline": False,
+            "range": [0, points_total["Points"].max() * 1.08],
+        },
+        yaxis={"showgrid": False},
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -400,12 +441,20 @@ def render_win_prob_chart(
     )
     df_long["Win Probability (%)"] = df_long["Win Probability"] * 100
 
+    latest_row = data_pivot.iloc[-1]
+    order = sorted(
+        drivers_select,
+        key=lambda d: latest_row[d] if pd.notna(latest_row[d]) else float("-inf"),
+        reverse=True,
+    )
+
     color_map = dict(zip(drivers_select, team_colors))
     fig = px.line(
         df_long,
         x="dt_ref",
         y="Win Probability (%)",
         color="Driver",
+        category_orders={"Driver": order},
         color_discrete_map=color_map,
         markers=True,
         labels={"dt_ref": "Post-Race Date"},
@@ -440,17 +489,20 @@ def render_season_progression(bronze: pd.DataFrame, year: int) -> None:
     )
     cumulative["Cumulative Points"] = cumulative.groupby("FullName")["Points"].cumsum()
 
-    color_map = {
-        row["FullName"]: row["TeamColor"]
-        for _, row in cumulative.drop_duplicates("FullName").iterrows()
-    }
+    order = (
+        cumulative.groupby("FullName")["Cumulative Points"]
+        .last()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
 
     fig = px.line(
         cumulative,
         x="RoundNumber",
         y="Cumulative Points",
         color="FullName",
-        color_discrete_map=color_map,
+        category_orders={"FullName": order},
+        color_discrete_map=_color_map(cumulative, "FullName", keep="first"),
         markers=True,
         hover_data={"EventName": True},
         labels={"RoundNumber": "Round", "FullName": "Driver"},
@@ -480,6 +532,11 @@ def render_head_to_head(bronze: pd.DataFrame, year: int) -> None:
     pivot = races.pivot_table(
         index="Abbreviation", columns="EventName", values="Position", aggfunc="min"
     )
+
+    driver_order = compute_driver_stats(bronze, year)["Abbreviation"].tolist()
+    row_order = [a for a in driver_order if a in pivot.index]
+    row_order += [a for a in pivot.index if a not in row_order]
+    pivot = pivot.reindex(row_order[::-1])
 
     fig = go.Figure(
         data=go.Heatmap(
@@ -536,9 +593,10 @@ def main() -> None:
     # ── Filters ───────────────────────────────────────────────────────────────
     most_prob = data.sort_values(by=["dt_ref", "prob_win"], ascending=False).head(5)
     drivers_data = (
-        data[["DriverId", "driver_team_id", "dt_ref"]]
-        .sort_values(["dt_ref", "driver_team_id"])
+        data[["DriverId", "driver_team_id", "dt_ref", "prob_win"]]
+        .sort_values(["dt_ref", "prob_win"], ascending=[False, False])
         .drop_duplicates(subset=["DriverId"], keep="first")
+        .sort_values("prob_win", ascending=False)
         .dropna()
     )
 
