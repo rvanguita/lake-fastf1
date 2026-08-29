@@ -422,7 +422,7 @@ def render_points_bar(bronze: pd.DataFrame, year: int) -> None:
             "zeroline": False,
             "range": [0, points_total["Points"].max() * 1.08],
         },
-        yaxis={"showgrid": False},
+        yaxis={"showgrid": False, "categoryorder": "total ascending"},
     )
     st.plotly_chart(fig, width="stretch")
 
