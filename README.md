@@ -1,6 +1,8 @@
 
 # Lake FastF1
 
+[![tests](https://github.com/rvanguita/lake-fastf1/actions/workflows/tests.yml/badge.svg)](https://github.com/rvanguita/lake-fastf1/actions/workflows/tests.yml)
+
 ![Lake FastF1](img/high.png)
 
 Lake FastF1 is a long-term data engineering and machine learning project focused on Formula 1 data. It combines data ingestion, lakehouse-style transformations, and a lightweight prediction experience powered by a trained model.
@@ -125,6 +127,9 @@ uv run pytest                        # root — src/ helpers + ExtractData
 (cd app/api && uv run pytest)        # FastAPI routes
 (cd app/streamlit && uv run pytest)  # dashboard pandas helpers
 ```
+
+CI (`.github/workflows/tests.yml`) runs all three suites plus `ruff format --check` on every
+push and pull request.
 
 ### Environment variables
 
