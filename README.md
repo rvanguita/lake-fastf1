@@ -1,7 +1,7 @@
 
 # Lake FastF1
 
-![Alt Text](img/high.png)
+![Lake FastF1](img/high.png)
 
 Lake FastF1 is a long-term data engineering and machine learning project focused on Formula 1 data. It combines data ingestion, lakehouse-style transformations, and a lightweight prediction experience powered by a trained model.
 
@@ -15,7 +15,10 @@ The workflow includes:
 - Storing the raw data in Parquet files.
 - Consolidating the data into a Bronze layer with Delta Lake.
 - Creating Silver-layer datasets for champions, driver statistics, and analytical tables.
+- Training a championship-prediction model (scikit-learn) tracked in MLflow.
+- Mirroring the Bronze/Silver Delta tables into MySQL for BI consumers outside the Spark/Delta stack.
 - Exposing predictions through a **FastAPI** service and an interactive **Streamlit** dashboard.
+- Optionally archiving raw Parquet files to S3 (manual utility, not part of the DAG).
 
 ## Architecture
 
@@ -24,25 +27,25 @@ The project follows a practical data platform structure:
 - **Raw layer**: initial extracted results stored as Parquet files.
 - **Bronze layer**: consolidated data tables stored in Delta format.
 - **Silver layer**: curated analytical datasets prepared for reporting and model consumption.
-- **Orchestration**: an Airflow DAG runs the pipeline on a scheduled basis.
+- **MySQL mirror**: the last DAG step (`src/sender_local.py`) copies every Bronze/Silver Delta table into MySQL for consumers outside the Spark/Delta stack.
+- **Orchestration**: the Airflow DAG `data-pipeline` (`dags/data_pipeline.py`) runs weekly on Mondays (`catchup=False`, `max_active_runs=1`), wiring `raw >> bronze >> silver >> sender_mysql` with explicit `Asset` lineage.
+- **S3 archive**: `src/sender.py` is a standalone CLI (not wired into the DAG) that uploads raw Parquet files to S3.
 - **Serving layer**: a FastAPI service and a Streamlit dashboard consume the processed data and machine learning outputs.
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Data Pipeline (Airflow)                    │
-│                                                                    │
-│  FastF1 ──► Raw (Parquet) ──► Bronze (Delta) ──► Silver (Delta)  │
-└──────────────────────┬─────────────────────────────────┬──────────┘
-                       │                                 │
-               ┌───────▼───────┐                 ┌──────▼──────┐
-               │  FastAPI :5002│                 │  MLflow     │
-               │  /predict     │◄────model────── │  (tracking) │
-               └───────┬───────┘                 └─────────────┘
-                       │
-               ┌───────▼────────┐
-               │ Streamlit :8501│
-               │  Dashboard     │
-               └────────────────┘
+┌────────────────────────── Airflow DAG: data-pipeline (weekly) ──────────────────────────┐
+│                                                                                         │
+│  FastF1 ──► Raw (Parquet) ──► Bronze (Delta) ──► Silver (Delta) ──► MySQL mirror         │
+│                 │                                                                        │
+└─────────────────┼───────────────────────────────────────────────────────────────────────┘
+                  │ manual CLI: src/sender.py
+            ┌─────▼─────┐
+            │ S3 bucket │
+            └───────────┘
+
+   MLflow (tracking) ──model──► FastAPI :5002 /predict ◄──── Streamlit :8501 dashboard
+                                                              │
+                        Bronze + Silver (Delta) ──read────────┘
 ```
 
 ## Main technologies
@@ -50,12 +53,15 @@ The project follows a practical data platform structure:
 | Layer | Technology |
 |---|---|
 | Data access | FastF1 |
-| Data processing | Pandas, NumPy, PySpark |
-| Storage | Delta Lake (Bronze/Silver) |
+| Data processing | Pandas, NumPy, PySpark, `deltalake` (direct Delta reads in the API/dashboard) |
+| Storage | Delta Lake (Bronze/Silver), Parquet (Raw) |
+| BI mirror | MySQL (PyMySQL + SQLAlchemy) |
+| Object storage | AWS S3 (boto3) |
 | Orchestration | Apache Airflow |
+| Modeling | scikit-learn |
+| Model tracking | MLflow |
 | Prediction API | **FastAPI** + Uvicorn |
 | Dashboard | Streamlit + Plotly |
-| Model tracking | MLflow |
 | Package management | **uv** |
 | Deployment | Docker, Docker Compose |
 
@@ -64,20 +70,32 @@ The project follows a practical data platform structure:
 ```
 lake-fastf1/
 ├── app/
-│   ├── api/            # FastAPI prediction service
+│   ├── api/                    # FastAPI prediction service (own uv project)
 │   │   ├── main.py
-│   │   ├── pyproject.toml
+│   │   ├── pyproject.toml / uv.lock
 │   │   └── Dockerfile
-│   └── streamlit/      # Interactive dashboard
+│   └── streamlit/              # Interactive dashboard (own uv project)
 │       ├── main.py
-│       ├── pyproject.toml
+│       ├── pyproject.toml / uv.lock
 │       └── Dockerfile
-├── dags/               # Airflow DAG definitions
-├── src/                # ETL: extraction, transformation, Spark logic
-├── data/               # Raw, Bronze, Silver datasets (gitignored)
-├── pyproject.toml      # Root uv project
+├── dags/
+│   └── data_pipeline.py        # the single Airflow DAG (dag_id="data-pipeline")
+├── src/                        # ETL / ML source
+│   ├── extract_data.py         # Raw: FastF1 -> data/raw (Parquet)
+│   ├── spark_session.py        # Bronze: consolidate Raw -> Delta (+ Spark/Delta helpers)
+│   ├── silver_data.py          # Silver: champions, driver_statistic_*, tb_abt
+│   ├── train_driver_champion.py  # train model, log/register in MLflow
+│   ├── sender_local.py         # mirror Bronze/Silver Delta tables into MySQL
+│   ├── sender.py               # upload raw Parquet to S3 (standalone CLI)
+│   ├── queries/                # SQL run by the Silver layer (champions.sql, ...)
+│   └── lake_fastf1/            # packaged entry point (uv_build)
+├── data/                       # Raw, Bronze, Silver datasets (gitignored)
+├── requirements.txt            # deps for the Airflow image (installed via pip)
+├── pyproject.toml              # root uv project
+├── CLAUDE.md                   # architecture & development guide
+├── .env.example
 ├── docker-compose.yml
-└── Dockerfile          # Airflow image
+└── Dockerfile                  # Airflow image
 ```
 
 ## Getting started
@@ -99,18 +117,25 @@ Services exposed:
 
 ### Environment variables
 
-Copy `.env.example` to `.env` and fill in the values:
+Copy `.env.example` to `.env` and fill in the values. Every pipeline module (`src/*.py`) reads
+its config via `os.environ[...]` and raises `KeyError` if a required var is unset — always run
+through `docker compose` or with `.env` sourced.
 
 ```env
+# AWS / S3 (raw Parquet archival: src/sender.py, manual CLI)
 AWS_KEY=
 AWS_SECRET_KEY=
+REGION_NAME="us-east-1"
 
+# Airflow (docker compose)
 AIRFLOW_VERSION=3.3.0
 AIRFLOW_PORT=8080
 AIRFLOW_UID=1000
 
+# FastAPI prediction service
 API_PORT=5002
 
+# Data lake layer paths + SQL directory
 PATH_RAW="data/raw"
 PATH_BRONZE="data/bronze"
 PATH_SILVER="data/silver"
@@ -118,11 +143,20 @@ PATH_QUERIES="src/queries"
 
 FORMAT_READ="parquet"
 
-MLFLOW_URI="http://mlflow_ip:5050/"
-MLFLOW_MODEL_REGISTERED="model_name"
-MLFLOW_EXPERIMENT_NAME="experiment_name"
+# MLflow
+MLFLOW_URI="http://localhost:5050"
+MLFLOW_MODEL_REGISTERED="f1-champion"
+MLFLOW_EXPERIMENT_NAME="f1-champion"
 
+# Streamlit dashboard
 STREAMLIT_PORT=8501
+
+# MySQL mirror (Bronze/Silver -> MySQL: src/sender_local.py, DAG task sender_mysql)
+MYSQL_HOST=
+MYSQL_PORT=3306
+MYSQL_ID_TABLE=fastf1
+MYSQL_USER=
+MYSQL_PASSWORD=
 ```
 
 | Variable | Description |
@@ -130,10 +164,22 @@ STREAMLIT_PORT=8501
 | `PATH_RAW` | Directory where extracted Parquet files are stored. |
 | `PATH_BRONZE` | Directory where consolidated Bronze tables are stored. |
 | `PATH_SILVER` | Directory where processed Silver tables are stored. |
-| `PATH_QUERIES` | Directory containing SQL files used by the transformation layer. |
+| `PATH_QUERIES` | Directory containing the SQL files run by the Silver layer. |
+| `FORMAT_READ` | File format read from the Raw layer (`parquet`). |
 | `MLFLOW_URI` | Tracking server URI used by the API and training scripts. |
 | `MLFLOW_MODEL_REGISTERED` | Name of the registered model served by the API. |
+| `MLFLOW_EXPERIMENT_NAME` | Experiment name used when logging training runs. |
 | `API_PORT` | Port exposed by the FastAPI service (default `5002`). |
+| `STREAMLIT_PORT` | Port exposed by the Streamlit dashboard (default `8501`). |
+| `AIRFLOW_PORT` / `AIRFLOW_UID` / `AIRFLOW_VERSION` | Airflow container port, host UID for file permissions, and image version. |
+| `AWS_KEY` / `AWS_SECRET_KEY` / `REGION_NAME` | Credentials/region for the manual S3 upload of raw Parquet (`src/sender.py`). |
+| `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` | Connection for the MySQL mirror step (`src/sender_local.py`). |
+| `MYSQL_ID_TABLE` | Table-name prefix for the mirrored tables (`{MYSQL_ID_TABLE}_{layer}_{table}`). |
+
+> The Streamlit container additionally gets `TABLE_PATH_SILVER` and `TABLE_PATH_BRONZE` from
+> `docker-compose.yml` (paths of the read-only Delta mounts inside that container, not the same
+> as `PATH_SILVER` / `PATH_BRONZE`), and reaches the API at `http://api-driver-champion:${API_PORT}`
+> (the Docker Compose service name), not `localhost`.
 
 ## Dashboard
 
