@@ -46,6 +46,12 @@ mocked via `main.model_find`), and the dashboard's `compute_*` / `format_color` 
 script are **not** covered. `pytest`/`httpx` live in each project's `[dependency-groups].dev`;
 `app/api` and `app/streamlit` set `[tool.uv] package = false` (single-module services).
 
+CI: `.github/workflows/tests.yml` runs `ruff format --check .` plus the three suites (matrix,
+one job per uv project, `uv run --locked`) on every `push` and `pull_request`. `setup-uv` is
+pinned to `0.12.0` to match the root `uv_build` constraint. `ruff check` (lint) is **not** in
+CI — the `# %%` script modules carry ~20 long-standing findings; only `ruff format` is kept
+clean.
+
 Each app has its own Dockerfile and is built independently by `docker-compose.yml`:
 - `app/api` — FastAPI service, own `pyproject.toml`/`uv.lock`
 - `app/streamlit` — Streamlit dashboard, own `pyproject.toml`/`uv.lock`
