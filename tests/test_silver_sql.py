@@ -27,9 +27,7 @@ def test_driver_statistic_is_str_formattable():
     """`driver_statistic.sql` is `.format()`-ed by ``driver_n_race``; a stray
     unescaped brace anywhere in the file would raise here."""
     query = read_sql_file("driver_statistic")
-    formatted = query.format(
-        year_start=1980, year_stop=CURRENT_YEAR, last_rounds=5
-    )
+    formatted = query.format(year_start=1980, year_stop=CURRENT_YEAR, last_rounds=5)
     assert "{" not in formatted and "}" not in formatted
 
 

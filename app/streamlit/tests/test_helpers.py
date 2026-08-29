@@ -15,6 +15,7 @@ import main
 
 # ── format_color ────────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
@@ -29,6 +30,7 @@ def test_format_color(value, expected):
 
 
 # ── _rank_by ────────────────────────────────────────────────────────────────
+
 
 def test_rank_by_sorts_desc_and_prepends_rank():
     df = pd.DataFrame({"FullName": ["a", "b", "c"], "Points": [10, 30, 20]})
@@ -47,6 +49,7 @@ def test_rank_by_custom_column():
 
 
 # ── _color_map ──────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def team_color_df():
@@ -71,6 +74,7 @@ def test_color_map_keep_first(team_color_df):
 
 # ── get_id_predictions ──────────────────────────────────────────────────────
 
+
 def test_get_id_predictions_calls_api_and_unwraps(monkeypatch):
     resp = Mock()
     resp.json.return_value = {"predictions": {"x": {"1": 0.9}}}
@@ -88,6 +92,7 @@ def test_get_id_predictions_calls_api_and_unwraps(monkeypatch):
 
 # ── compute_driver_stats / compute_team_stats ───────────────────────────────
 
+
 @pytest.fixture
 def bronze():
     rows = [
@@ -98,7 +103,19 @@ def bronze():
         # Lando — McLaren — P2, P3, DNF
         ("Race", 2024, 1, 2.0, 3.0, 18.0, "Lando N", "McLaren", "#FF8000", "NOR", "2"),
         ("Race", 2024, 2, 3.0, 3.0, 15.0, "Lando N", "McLaren", "#FF8000", "NOR", "3"),
-        ("Race", 2024, 3, np.nan, 4.0, 0.0, "Lando N", "McLaren", "#FF8000", "NOR", "R"),
+        (
+            "Race",
+            2024,
+            3,
+            np.nan,
+            4.0,
+            0.0,
+            "Lando N",
+            "McLaren",
+            "#FF8000",
+            "NOR",
+            "R",
+        ),
         # noise that must be filtered out
         ("Sprint", 2024, 1, 1.0, 1.0, 8.0, "Max V", "RB", "#3671C6", "VER", "1"),
         ("Race", 2023, 1, 1.0, 1.0, 25.0, "Max V", "RB", "#3671C6", "VER", "1"),
@@ -106,8 +123,17 @@ def bronze():
     return pd.DataFrame(
         rows,
         columns=[
-            "Mode", "Year", "RoundNumber", "Position", "GridPosition", "Points",
-            "FullName", "TeamName", "TeamColor", "Abbreviation", "ClassifiedPosition",
+            "Mode",
+            "Year",
+            "RoundNumber",
+            "Position",
+            "GridPosition",
+            "Points",
+            "FullName",
+            "TeamName",
+            "TeamColor",
+            "Abbreviation",
+            "ClassifiedPosition",
         ],
     )
 
@@ -135,9 +161,9 @@ def test_compute_driver_stats_values(bronze):
     assert ln["Rank"] == 2
     assert ln["Points"] == 33.0
     assert ln["Wins"] == 0
-    assert ln["Podiums"] == 2          # NaN finish is not a podium
+    assert ln["Podiums"] == 2  # NaN finish is not a podium
     assert ln["DNFs"] == 1
-    assert ln["AvgFinish"] == pytest.approx(2.5)   # NaN skipped
+    assert ln["AvgFinish"] == pytest.approx(2.5)  # NaN skipped
     assert ln["PodiumRate"] == pytest.approx(2 / 3)
 
 

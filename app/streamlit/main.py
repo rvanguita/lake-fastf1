@@ -16,6 +16,7 @@ N_RECENT_RACES = 5
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def format_color(color: str) -> str:
     if color is None:
         return "#ffffff"
@@ -50,6 +51,7 @@ def _color_map(
 
 # ── Data loaders ─────────────────────────────────────────────────────────────
 
+
 @st.cache_data(ttl="1d")
 def get_bronze() -> pd.DataFrame:
     """Full race/qualifying results from the Bronze layer."""
@@ -77,19 +79,25 @@ def get_predictions() -> pd.DataFrame:
     data = pd.merge(data, preds_df, on="id")
     data["prob_win"] = pd.to_numeric(data["prob_win"], errors="coerce")
 
-    driver_info = (
-        get_bronze()
-        .drop_duplicates(subset=["DriverId"])[
-            ["DriverId", "TeamName", "TeamColor", "FullName", "TeamId",
-             "HeadshotUrl", "CountryCode", "Abbreviation"]
+    driver_info = get_bronze().drop_duplicates(subset=["DriverId"])[
+        [
+            "DriverId",
+            "TeamName",
+            "TeamColor",
+            "FullName",
+            "TeamId",
+            "HeadshotUrl",
+            "CountryCode",
+            "Abbreviation",
         ]
-    )
+    ]
     data = pd.merge(data, driver_info, on="DriverId")
     data["driver_team_id"] = data["DriverId"] + "_" + data["TeamId"]
     return data
 
 
 # ── Section renderers ─────────────────────────────────────────────────────────
+
 
 def render_kpi_row(data: pd.DataFrame) -> None:
     """Top-3 drivers by latest prediction win probability."""
@@ -119,7 +127,9 @@ def render_kpi_row(data: pd.DataFrame) -> None:
                 (data["dt_ref"] == prev_date) & (data["DriverId"] == row["DriverId"])
             ]
             if not prev_row.empty:
-                delta = (float(row["prob_win"]) - float(prev_row["prob_win"].iloc[0])) * 100
+                delta = (
+                    float(row["prob_win"]) - float(prev_row["prob_win"].iloc[0])
+                ) * 100
                 delta_str = f"{delta:+.1f}%"
 
         col.metric(
@@ -141,7 +151,9 @@ def render_season_snapshot(bronze: pd.DataFrame, year: int) -> None:
 
     rounds_completed = races["RoundNumber"].nunique()
 
-    points_by_driver = races.groupby("FullName")["Points"].sum().sort_values(ascending=False)
+    points_by_driver = (
+        races.groupby("FullName")["Points"].sum().sort_values(ascending=False)
+    )
     leader = points_by_driver.index[0] if not points_by_driver.empty else "—"
     leader_pts = points_by_driver.iloc[0] if not points_by_driver.empty else 0.0
     gap = leader_pts - points_by_driver.iloc[1] if len(points_by_driver) > 1 else 0.0
@@ -171,11 +183,7 @@ def render_season_snapshot(bronze: pd.DataFrame, year: int) -> None:
 
 def render_recent_races(bronze: pd.DataFrame, n: int = N_RECENT_RACES) -> None:
     """Top-5 finishers for each of the last N race rounds, with grid → finish movement."""
-    races = (
-        bronze[bronze["Mode"] == "Race"]
-        .dropna(subset=["Position"])
-        .copy()
-    )
+    races = bronze[bronze["Mode"] == "Race"].dropna(subset=["Position"]).copy()
     races["Position"] = races["Position"].astype(int)
     races["GridPosition"] = pd.to_numeric(races["GridPosition"], errors="coerce")
 
@@ -207,7 +215,14 @@ def render_recent_races(bronze: pd.DataFrame, n: int = N_RECENT_RACES) -> None:
                 & (races["Position"] <= 5)
             ]
             .sort_values("Position")[
-                ["Position", "GridPosition", "Abbreviation", "TeamName", "TeamColor", "Points"]
+                [
+                    "Position",
+                    "GridPosition",
+                    "Abbreviation",
+                    "TeamName",
+                    "TeamColor",
+                    "Points",
+                ]
             ]
             .reset_index(drop=True)
         )
@@ -248,6 +263,7 @@ def render_recent_races(bronze: pd.DataFrame, n: int = N_RECENT_RACES) -> None:
 
 # ── Statistics tables ───────────────────────────────────────────────────────
 
+
 def compute_driver_stats(bronze: pd.DataFrame, year: int) -> pd.DataFrame:
     """Per-driver season aggregates: wins, podiums, poles, DNFs, pace metrics."""
     races = bronze[(bronze["Mode"] == "Race") & (bronze["Year"] == year)].copy()
@@ -285,8 +301,22 @@ def render_driver_stats_table(bronze: pd.DataFrame, year: int) -> None:
 
     st.dataframe(
         stats[
-            ["Rank", "FullName", "TeamName", "Races", "Wins", "Podiums", "Poles",
-             "DNFs", "Points", "BestFinish", "AvgFinish", "AvgGrid", "AvgGain", "PodiumRate"]
+            [
+                "Rank",
+                "FullName",
+                "TeamName",
+                "Races",
+                "Wins",
+                "Podiums",
+                "Poles",
+                "DNFs",
+                "Points",
+                "BestFinish",
+                "AvgFinish",
+                "AvgGrid",
+                "AvgGain",
+                "PodiumRate",
+            ]
         ],
         column_config={
             "Rank": st.column_config.NumberColumn("#"),
@@ -381,9 +411,8 @@ def render_team_stats(bronze: pd.DataFrame, year: int) -> None:
 
 def render_points_bar(bronze: pd.DataFrame, year: int) -> None:
     """Accumulated championship points for the selected season."""
-    races = (
-        bronze[(bronze["Mode"] == "Race") & (bronze["Year"] == year)]
-        .dropna(subset=["Points"])
+    races = bronze[(bronze["Mode"] == "Race") & (bronze["Year"] == year)].dropna(
+        subset=["Points"]
     )
     if races.empty:
         st.info("No race points data for this season.")
@@ -482,7 +511,9 @@ def render_season_progression(bronze: pd.DataFrame, year: int) -> None:
         return
 
     cumulative = (
-        races.groupby(["FullName", "TeamName", "TeamColor", "RoundNumber", "EventName"])["Points"]
+        races.groupby(
+            ["FullName", "TeamName", "TeamColor", "RoundNumber", "EventName"]
+        )["Points"]
         .sum()
         .reset_index()
         .sort_values(["FullName", "RoundNumber"])
@@ -561,6 +592,7 @@ def render_head_to_head(bronze: pd.DataFrame, year: int) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     st.set_page_config(
         page_title="F1 Champion Predictor",
@@ -619,7 +651,9 @@ def main() -> None:
     ]
 
     if data_filter.empty:
-        st.warning("No data for the selected filters. Try a different driver or season.")
+        st.warning(
+            "No data for the selected filters. Try a different driver or season."
+        )
         return
 
     data_pivot = data_filter.pivot_table(
@@ -642,7 +676,15 @@ def main() -> None:
     column_config_pivot["dt_ref"] = st.column_config.DateColumn("Prediction Date")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_prob, tab_points, tab_progression, tab_heatmap, tab_drivers, tab_teams, tab_data = st.tabs(
+    (
+        tab_prob,
+        tab_points,
+        tab_progression,
+        tab_heatmap,
+        tab_drivers,
+        tab_teams,
+        tab_data,
+    ) = st.tabs(
         [
             "📈 Win Probability",
             "🏅 Points Ranking",
