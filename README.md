@@ -115,6 +115,17 @@ Services exposed:
 | FastAPI Swagger | http://localhost:5002/docs |
 | Streamlit | http://localhost:8501 |
 
+### Tests
+
+`pytest`, split into three suites (one per `uv` project). They mock every external dependency
+(FastF1, Spark, MLflow, MySQL, S3), so they run in seconds:
+
+```bash
+uv run pytest                        # root — src/ helpers + ExtractData
+(cd app/api && uv run pytest)        # FastAPI routes
+(cd app/streamlit && uv run pytest)  # dashboard pandas helpers
+```
+
 ### Environment variables
 
 Copy `.env.example` to `.env` and fill in the values. Every pipeline module (`src/*.py`) reads

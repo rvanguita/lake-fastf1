@@ -48,6 +48,13 @@ def predict(body: PredictRequest):
         raise HTTPException(status_code=400, detail="No features provided")
 
     df = pd.DataFrame(body.values)
+
+    missing = [c for c in model.feature_names_in_ if c not in df.columns]
+    if missing:
+        raise HTTPException(
+            status_code=422, detail=f"missing feature columns: {missing}"
+        )
+
     X = df[model.feature_names_in_]
 
     df_proba = pd.DataFrame(model.predict_proba(X), columns=model.classes_)

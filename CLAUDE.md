@@ -30,9 +30,21 @@ uv run python -m src.train_driver_champion  # train model, log to MLflow
 # Airflow (DAG lives in dags/data_pipeline.py, dag_id="data-pipeline")
 # When run via docker compose, AIRFLOW_HOME is /opt/airflow/project/.airflow
 # and the DAGs folder is /opt/airflow/project/dags (repo root mounted at /opt/airflow/project)
+
+# Tests (pytest). Three separate suites — each its own uv project:
+uv run pytest                              # root: src/ (tests/)
+uv run pytest --cov=src --cov-report=term-missing
+(cd app/api && uv run pytest)              # FastAPI routes (app/api/tests/)
+(cd app/streamlit && uv run pytest)        # dashboard pandas helpers (app/streamlit/tests/)
 ```
 
-There is no test suite in this repo (no `tests/` directory, no test runner configured).
+The test suites are deliberately infra-free: FastF1 (network), Spark/Delta (JVM), MLflow, MySQL
+and S3 are all mocked or replaced with `tmp_path`, so `pytest` runs in seconds. They cover the
+pure logic only — `src/` helpers + `ExtractData` (FastF1 mocked), the FastAPI routes (model
+mocked via `main.model_find`), and the dashboard's `compute_*` / `format_color` / `_rank_by` /
+`_color_map` helpers. SQL transformations, the Silver Spark logic, the DAG and the training
+script are **not** covered. `pytest`/`httpx` live in each project's `[dependency-groups].dev`;
+`app/api` and `app/streamlit` set `[tool.uv] package = false` (single-module services).
 
 Each app has its own Dockerfile and is built independently by `docker-compose.yml`:
 - `app/api` — FastAPI service, own `pyproject.toml`/`uv.lock`

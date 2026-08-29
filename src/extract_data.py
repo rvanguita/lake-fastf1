@@ -77,12 +77,14 @@ class ExtractData:
         df.to_parquet(filename, index=False)
 
     def process_years(self) -> bool:
+        new_data = False
         for year in self.years:
             new_data = self.process_identifiers(year)
             time.sleep(10)
         return new_data
 
     def process_identifiers(self, year: int) -> bool:
+        new_data = False
         for identifier in self.identifiers:
             for gp in range(1, 30):
                 new_data = self.process_data(year, gp, identifier)
