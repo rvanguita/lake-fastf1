@@ -13,7 +13,7 @@ from sklearn import ensemble, impute, metrics, pipeline
 
 from src.spark_session import spark_session
 
-dotenv.load_dotenv
+dotenv.load_dotenv()
 
 mlflow.set_tracking_uri(os.getenv("MLFLOW_URI"))
 mlflow.set_experiment(experiment_name=os.getenv("MLFLOW_EXPERIMENT_NAME"))
