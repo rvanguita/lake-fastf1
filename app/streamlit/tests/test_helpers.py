@@ -149,6 +149,51 @@ def test_read_delta_pushes_projection_and_filter_and_caches_by_version(monkeypat
     ]
 
 
+def test_model_metadata_failure_is_not_cached(monkeypatch):
+    data._api_json.clear()
+    ok = Mock()
+    ok.json.return_value = {"features": ["f"]}
+    get = Mock(side_effect=[data.requests.ConnectionError("fora"), ok])
+    monkeypatch.setattr(data.requests, "get", get)
+
+    assert data.model_info() == {}
+    assert data.model_info() == {"features": ["f"]}  # tentou de novo
+    assert data.model_info() == {"features": ["f"]}  # sucesso fica em cache
+    assert get.call_count == 2
+
+
+def test_prediction_failure_is_not_cached(monkeypatch):
+    dates = pd.to_datetime(["2024-03-01", "2024-03-01"])
+    abt = pd.DataFrame({"dt_ref": dates, "DriverId": ["a", "b"], "f": [1.0, 2.0]})
+    debut = pd.DataFrame({"DriverId": ["a", "b"], "FirstRaceDate": dates})
+    monkeypatch.setattr(data, "_abt_raw", lambda year: abt)
+    monkeypatch.setattr(data, "_driver_metadata", lambda year: debut)
+    monkeypatch.setattr(data, "_delta_version", lambda path, optional=False: 1)
+    data._prediction_frame.clear()
+    data._load_predictions.clear()
+
+    offline = Mock(side_effect=data.requests.ConnectionError("fora"))
+    monkeypatch.setattr(data, "predict_v1", offline)
+    monkeypatch.setattr(data, "predict_legacy", offline)
+    first = data.load_predictions(2024)
+    assert first["prob_win"].isna().all()
+    assert "FirstRaceDate" not in first
+
+    online = Mock(
+        return_value=(
+            {
+                "2024-03-01_a": {"probability": 0.7},
+                "2024-03-01_b": {"probability": 0.3},
+            },
+            {"status": "experimental"},
+        )
+    )
+    monkeypatch.setattr(data, "predict_v1", online)
+    second = data.load_predictions(2024)
+    assert second.set_index("DriverId")["prob_win"].to_dict() == {"a": 0.7, "b": 0.3}
+    assert second.attrs["prediction_metadata"] == {"status": "experimental"}
+
+
 # ── season aggregates ──────────────────────────────────────────────────────
 
 

@@ -46,4 +46,24 @@ services:
     restart:  unless-stopped
     depends_on: 
       - "api-driver-champion"
-      
+
+  dash:
+    build:
+      context: ./app/dash/
+    ports:
+      - "${DASH_PORT:-8050}:8050"
+    environment:
+      TABLE_PATH_BRONZE: "/data/bronze/results"
+      TABLE_PATH_SILVER: "/data/silver/tb_abt"
+      API_URL: "http://api-driver-champion:5002"
+    volumes:
+      - ./data/bronze/results:/data/bronze/results:ro
+      - ./data/silver/tb_abt:/data/silver/tb_abt:ro
+    restart: unless-stopped
+    depends_on:
+      - api-driver-champion
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8050/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

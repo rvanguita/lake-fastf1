@@ -5,12 +5,20 @@ minimal fake estimator (or ``None``), and the model cache is cleared between
 tests.
 """
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import mlflow
 import numpy as np
+import pandas as pd
 import pytest
+import skops.io
 from fastapi.testclient import TestClient
+from mlflow.models import Model
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import make_pipeline
 
 import main
 
@@ -235,3 +243,76 @@ def test_model_find_returns_none_on_loader_failure(monkeypatch):
 
     monkeypatch.setattr(main, "_load_model", boom)
     assert main.model_find("f1-champion") is None
+
+
+# ── model loading (skops) ───────────────────────────────────────────────────
+
+
+@pytest.fixture
+def skops_forest(tmp_path):
+    """Pipeline real salvo em skops com o `MLmodel` igual ao da v2 registrada.
+
+    A v2 foi gravada quando o skops ainda confiava em `Tree` por padrão, então o
+    `MLmodel` lista só `numpy.dtype`; o skops 0.16 passou a exigir `Tree` também.
+    """
+    frame = pd.DataFrame({"f1": [0, 1, 0, 1, 2, 3], "f2": [1, 0, 1, 0, 3, 2]})
+    model = make_pipeline(
+        SimpleImputer(), RandomForestClassifier(n_estimators=3, random_state=0)
+    ).fit(frame, [0, 1, 0, 1, 1, 0])
+    path = tmp_path / "model"
+    mlflow.sklearn.save_model(
+        model,
+        str(path),
+        serialization_format="skops",
+        skops_trusted_types=skops.io.get_untrusted_types(data=skops.io.dumps(model)),
+        pip_requirements=["scikit-learn"],
+    )
+    saved = Model.load(str(path))
+    saved.flavors["sklearn"]["skops_trusted_types"] = ["numpy.dtype"]
+    saved.save(str(path / "MLmodel"))
+    return path, frame
+
+
+def test_skops_model_loads_and_predicts(skops_forest):
+    path, frame = skops_forest
+    model = main._load_local_model(str(path))
+    assert model.predict_proba(frame).shape == (6, 2)
+    assert list(model.feature_names_in_) == ["f1", "f2"]
+
+
+def test_trusted_types_merge_mlmodel_and_reviewed_list(skops_forest, monkeypatch):
+    path, _ = skops_forest
+    real_load = main.skops.io.load
+    seen = {}
+
+    def spy(file, trusted=None):
+        seen["trusted"] = trusted
+        return real_load(file, trusted=trusted)
+
+    monkeypatch.setattr(main.skops.io, "load", spy)
+    main._load_local_model(str(path))
+    assert seen["trusted"] == ["numpy.dtype", "sklearn.tree._tree.Tree"]
+
+
+def test_load_model_downloads_latest_registered_version(skops_forest, monkeypatch):
+    path, _ = skops_forest
+    versions = [SimpleNamespace(version="1"), SimpleNamespace(version="2")]
+    monkeypatch.setattr(
+        main.mlflow,
+        "search_registered_models",
+        lambda **_: [SimpleNamespace(latest_versions=versions)],
+    )
+    download = Mock(return_value=str(path))
+    monkeypatch.setattr(main.mlflow.artifacts, "download_artifacts", download)
+    assert main._load_model("f1-champion") is not None
+    download.assert_called_once_with("models:/f1-champion/2")
+
+
+def test_model_find_logs_the_real_failure(monkeypatch, caplog):
+    def broken(model_id=None):
+        raise RuntimeError("tipo não confiável")
+
+    monkeypatch.setattr(main, "_load_model", broken)
+    with caplog.at_level(logging.ERROR, logger="main"):
+        assert main.model_find("f1-champion") is None
+    assert "tipo não confiável" in caplog.text
