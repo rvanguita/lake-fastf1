@@ -31,21 +31,22 @@ services:
       context: ./app/streamlit/
       dockerfile: Dockerfile
     ports:
-      - "8501:8501"
+      - "${STREAMLIT_PORT:-8501}:8501"
     environment:
-      TABLE_PATH_SILVER: "/data/silver/tb_abt"
-      TABLE_PATH_BRONZE: "/data/bronze/results"
-      TABLE_PATH_MART_DRIVER_ROUND: "/data/silver/mart_driver_round"
-      TABLE_PATH_MART_STANDINGS: "/data/silver/mart_standings"
-
+      LAKE_ROOT: "/data"
+      API_URL: "http://api-driver-champion:5002"
     volumes:
-      - ./data/silver/tb_abt:/data/silver/tb_abt:ro
-      - ./data/bronze/results:/data/bronze/results:ro
+      - ./data:/data:ro
     env_file:
       ./.env
-    restart:  unless-stopped
-    depends_on: 
+    restart: unless-stopped
+    depends_on:
       - "api-driver-champion"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   dash:
     build:

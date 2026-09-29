@@ -1,12 +1,13 @@
 [project]
 name = "f1-dashboard"
 version = "0.1.0"
-description = "F1 Champion Win Predictor — Streamlit dashboard"
+description = "Lake FastF1 · Paddock — Streamlit dashboard"
 requires-python = ">=3.13"
 dependencies = [
     "deltalake>=1.6.2",
     "pandas>=2.0.0,<3.0.0",
     "plotly>=5.0.0",
+    "pyarrow>=19",
     "requests>=2.31.0",
     "streamlit>=1.61.1",
 ]
@@ -16,7 +17,7 @@ dev = [
     "pytest>=8.3",
 ]
 
-# Flat module service (main/data/analytics/charts), not a distributable
+# Flat module service (main + views/), not a distributable
 # package — tell uv not to build/install it, only its dependencies.
 [tool.uv]
 package = false
@@ -27,9 +28,10 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 # The sibling modules are first-party — a bare `data/` dir at the repo root
 # otherwise makes ruff's isort treat only `import data` as local.
 [tool.ruff.lint.isort]
-known-first-party = ["analytics", "charts", "data", "main"]
+known-first-party = ["charts", "fmt", "lake", "main", "metrics", "model_api", "ui"]
 

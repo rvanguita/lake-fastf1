@@ -1,504 +1,402 @@
-"""Visualizações editoriais Plotly do Lake FastF1."""
+"""Figuras Plotly sobre um template escuro único (aplicado com `theme=None`)."""
 
 from __future__ import annotations
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
-import streamlit as st
+import plotly.io as pio
 
-ACCENT = "#ff4b44"
-POSITIVE = "#19a974"
-NEGATIVE = "#e05252"
-NEUTRAL = "#737b8c"
-GRID = "rgba(128,128,128,.16)"
+import fmt
+import metrics
+
+SURFACE = "#1a1a19"
+INK = "#f2f1ec"
+INK_2 = "#c3c2b7"
+MUTED = "#8a8a84"
+GRID = "#2c2c2a"
+AXIS = "#3a3a37"
+ACCENT = "#3987e5"
+NEGATIVE = "#d95926"
+WARNING = "#fab219"
+FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+# Paleta categórica escura validada (CVD e contraste 3:1) contra SURFACE; ordem fixa.
+SERIES = [
+    "#3987e5",
+    "#d95926",
+    "#199e70",
+    "#c98500",
+    "#d55181",
+    "#008300",
+    "#9085e9",
+    "#e66767",
+]
+
+pio.templates["paddock"] = go.layout.Template(
+    layout={
+        "font": {"family": FONT, "size": 12, "color": INK_2},
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "colorway": SERIES,
+        "separators": ",.",
+        "margin": {"l": 8, "r": 16, "t": 36, "b": 8},
+        "hoverlabel": {
+            "bgcolor": "#262624",
+            "bordercolor": AXIS,
+            "font": {"family": FONT, "color": INK},
+        },
+        "legend": {
+            "orientation": "h",
+            "x": 0,
+            "y": 1.02,
+            "yanchor": "bottom",
+            "bgcolor": "rgba(0,0,0,0)",
+            "font": {"color": INK_2},
+        },
+        "xaxis": {
+            "showgrid": False,
+            "zeroline": False,
+            "linecolor": AXIS,
+            "tickcolor": AXIS,
+            "color": MUTED,
+            "automargin": True,
+            "title": {"font": {"size": 11, "color": MUTED}},
+        },
+        "yaxis": {
+            "gridcolor": GRID,
+            "zeroline": False,
+            "color": MUTED,
+            "automargin": True,
+            "title": {"font": {"size": 11, "color": MUTED}},
+        },
+    }
+)
+CONFIG = {"displayModeBar": False, "responsive": True}
 
 
-def _template() -> str:
-    return (
-        "plotly_dark"
-        if (st.get_option("theme.base") or "light") == "dark"
-        else "plotly_white"
+def _figure(height: int) -> go.Figure:
+    return go.Figure(layout={"template": "paddock", "height": height})
+
+
+def identity_styles(frame: pd.DataFrame) -> dict[str, tuple[str, str]]:
+    """Cor e traço por piloto: cor da equipe (companheiro pontilhado) ou, sem cores
+    na fonte (temporadas antigas), um slot fixo da paleta por piloto e traço cheio."""
+    drivers = frame.drop_duplicates("driver_id")
+    if drivers["color"].eq(metrics.FALLBACK_COLOR).all():
+        return {
+            driver: (SERIES[index % len(SERIES)], "solid")
+            for index, driver in enumerate(drivers["driver_id"])
+        }
+    team = "team_name" if "team_name" in drivers else "team"
+    dashes = metrics.line_dashes(
+        list(drivers[["driver_id", team]].itertuples(index=False))
     )
+    return {
+        driver: (color, dashes[driver])
+        for driver, color in zip(drivers["driver_id"], drivers["color"], strict=True)
+    }
 
 
-def _apply(fig: go.Figure, height: int = 420, *, legend: bool = True) -> go.Figure:
-    fig.update_layout(
-        template=_template(),
-        height=height,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin={"t": 36, "b": 28, "l": 12, "r": 12},
-        font={"family": "Inter, ui-sans-serif, system-ui", "size": 13},
-        hoverlabel={"namelength": -1, "font_size": 13},
-        showlegend=legend,
-        legend_title_text="",
-    )
-    fig.update_xaxes(gridcolor=GRID, zeroline=False, automargin=True)
-    fig.update_yaxes(gridcolor=GRID, zeroline=False, automargin=True)
+def title_fight(frame: pd.DataFrame, metric: str) -> go.Figure:
+    """`metric` = "points" (acumulado) ou "rank" (posição no campeonato)."""
+    fig = _figure(420)
+    column = "cumulative_points" if metric == "points" else "championship_rank"
+    styles = identity_styles(frame)
+    for driver_id, data in frame.groupby("driver_id", sort=False):
+        first = data.iloc[0]
+        color, dash = styles[driver_id]
+        fig.add_trace(
+            go.Scatter(
+                x=data["round_number"],
+                y=data[column],
+                name=first["driver_name"],
+                mode="lines+markers",
+                line={"color": color, "width": 2, "dash": dash},
+                marker={"size": 6},
+                customdata=data[["event_name"]],
+                hovertemplate="%{customdata[0]}<br>%{y}<extra>%{fullData.name}</extra>",
+            )
+        )
+        last = data.iloc[-1]
+        fig.add_annotation(
+            x=last["round_number"],
+            y=last[column],
+            text=last["abbreviation"],
+            xanchor="left",
+            xshift=8,
+            showarrow=False,
+            font={"color": INK_2, "size": 11},
+        )
+    fig.update_xaxes(title="Rodada", tickformat="d")
+    if metric == "points":
+        fig.update_yaxes(title="Pontos acumulados", rangemode="tozero")
+    else:
+        fig.update_yaxes(title="Posição no campeonato", autorange="reversed", dtick=1)
     return fig
 
 
-def probability_ranking(momentum: pd.DataFrame, n: int = 10) -> go.Figure:
-    d = momentum.dropna(subset=["latest"]).head(n).sort_values("latest")
-    colors = [d.iloc[i].get("TeamColor", NEUTRAL) for i in range(len(d))]
-    d = d.assign(
-        delta_label=d["delta_prev"].map(
-            lambda value: (
-                "sem rodada anterior" if pd.isna(value) else f"{value * 100:+.1f} pp"
-            )
-        )
-    )
-    custom = d[["delta_label", "TeamName"]].to_numpy()
-    fig = go.Figure(
+def constructors(table: pd.DataFrame) -> go.Figure:
+    data = table.iloc[::-1]
+    fig = _figure(max(260, 30 * len(data) + 60))
+    fig.add_trace(
         go.Bar(
-            x=d["latest"] * 100,
-            y=d["FullName"],
+            x=data["points"],
+            y=data["team"],
             orientation="h",
-            marker={"color": colors, "line": {"color": GRID, "width": 1}},
-            text=[f"{v:.1%}" for v in d["latest"]],
+            # Temporadas antigas não têm cor de equipe: barra única no acento.
+            marker={
+                "color": data["color"].replace(metrics.FALLBACK_COLOR, ACCENT),
+                "cornerradius": 3,
+            },
+            text=[fmt.points(value) for value in data["points"]],
             textposition="outside",
+            textfont={"color": INK_2},
             cliponaxis=False,
-            customdata=custom,
-            hovertemplate="<b>%{y}</b><br>Chance: %{x:.1f}%<br>Variação: %{customdata[0]}<br>%{customdata[1]}<extra></extra>",
+            hovertemplate="%{y}: %{x:,.0f} pts<extra></extra>",
         )
     )
-    fig.update_layout(
-        xaxis={
-            "title": "Probabilidade normalizada",
-            "ticksuffix": "%",
-            "range": [0, max(5, d["latest"].max() * 115)],
-        },
-        yaxis_title="",
-    )
-    return _apply(fig, max(320, len(d) * 36), legend=False)
+    fig.update_layout(bargap=0.35, margin={"t": 8})
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(showgrid=False, ticklabelstandoff=8)
+    return fig
 
 
-def probability_history(preds: pd.DataFrame, selected: list[str]) -> go.Figure:
-    d = preds[preds["DriverId"].isin(selected)].copy()
-    d["Probability"] = d["prob_win"] * 100
-    colors = (
-        d.drop_duplicates("DriverId", keep="last")
-        .set_index("FullName")["TeamColor"]
-        .to_dict()
-    )
-    fig = px.line(
-        d,
-        x="dt_ref",
-        y="Probability",
-        color="FullName",
-        color_discrete_map=colors,
-        markers=True,
-        labels={
-            "dt_ref": "Data da previsão",
-            "Probability": "Chance do título",
-            "FullName": "Piloto",
-        },
-    )
-    fig.update_traces(line={"width": 2.8}, marker={"size": 6})
-    fig.update_layout(
-        hovermode="x unified",
-        yaxis={"ticksuffix": "%", "range": [0, 100]},
-        legend={"orientation": "h", "y": -0.24},
-    )
-    return _apply(fig, 450)
-
-
-def standings_bar(stats: pd.DataFrame, n: int = 20) -> go.Figure:
-    d = stats.head(n).sort_values("Points")
-    leader = float(stats["Points"].max())
-    d = d.assign(Gap=d["Points"] - leader)
-    fig = go.Figure(
-        go.Bar(
-            x=d["Points"],
-            y=d["FullName"],
-            orientation="h",
-            marker={"color": d["TeamColor"], "line": {"color": GRID, "width": 1}},
-            text=[
-                f"{p:.0f}  ({g:+.0f})" if g else f"{p:.0f}"
-                for p, g in zip(d["Points"], d["Gap"])
-            ],
-            textposition="outside",
-            cliponaxis=False,
-            customdata=d[["Wins", "Podiums", "DNFs", "TeamName"]],
-            hovertemplate="<b>%{y}</b><br>%{x:.0f} pts<br>Vitórias: %{customdata[0]}<br>Pódios: %{customdata[1]}<br>DNFs: %{customdata[2]}<br>%{customdata[3]}<extra></extra>",
-        )
-    )
-    fig.update_layout(
-        xaxis={
-            "title": "Pontos · diferença para o líder entre parênteses",
-            "range": [0, leader * 1.17],
-        },
-        yaxis_title="",
-    )
-    return _apply(fig, max(390, len(d) * 31), legend=False)
-
-
-def points_history(history: pd.DataFrame, selected: list[str]) -> go.Figure:
-    d = (
-        history[history["DriverId"].isin(selected)]
-        if "DriverId" in history
-        else history[history["FullName"].isin(selected)]
-    )
-    colors = (
-        d.drop_duplicates("FullName", keep="last")
-        .set_index("FullName")["TeamColor"]
-        .to_dict()
-    )
-    fig = px.line(
-        d,
-        x="RoundNumber",
-        y="CumulativePoints",
-        color="FullName",
-        color_discrete_map=colors,
-        markers=True,
-        custom_data=["EventName"],
-        labels={
-            "RoundNumber": "Rodada",
-            "CumulativePoints": "Pontos acumulados",
-            "FullName": "Piloto",
-        },
-    )
-    fig.update_traces(
-        hovertemplate="<b>%{fullData.name}</b><br>R%{x} · %{customdata[0]}<br>%{y:.0f} pts<extra></extra>"
-    )
-    fig.update_layout(hovermode="x unified", legend={"orientation": "h", "y": -0.24})
-    return _apply(fig, 450)
-
-
-def rank_bump(history: pd.DataFrame, selected: list[str]) -> go.Figure:
-    d = (
-        history[history["DriverId"].isin(selected)]
-        if "DriverId" in history
-        else history[history["FullName"].isin(selected)]
-    )
-    colors = (
-        d.drop_duplicates("FullName", keep="last")
-        .set_index("FullName")["TeamColor"]
-        .to_dict()
-    )
-    fig = px.line(
-        d,
-        x="RoundNumber",
-        y="ChampionshipRank",
-        color="FullName",
-        color_discrete_map=colors,
-        markers=True,
-        custom_data=["EventName"],
-        labels={
-            "RoundNumber": "Rodada",
-            "ChampionshipRank": "Posição",
-            "FullName": "Piloto",
-        },
-    )
-    fig.update_yaxes(autorange="reversed", dtick=1)
-    fig.update_traces(
-        line={"width": 2.5},
-        hovertemplate="<b>%{fullData.name}</b><br>R%{x} · %{customdata[0]}<br>P%{y:.0f}<extra></extra>",
-    )
-    fig.update_layout(legend={"orientation": "h", "y": -0.24})
-    return _apply(fig, 450)
-
-
-def result_heatmap(results: pd.DataFrame, driver_order: list[str]) -> go.Figure:
-    d = results.copy()
-    events = d.sort_values("RoundNumber").drop_duplicates("RoundNumber")
-    event_order = events["EventName"].tolist()
-    value = d.pivot_table(
-        index="Abbreviation",
-        columns="EventName",
-        values="OfficialFinish",
-        aggfunc="first",
-    ).reindex(index=driver_order, columns=event_order)
-    labels = (
-        d.pivot_table(
-            index="Abbreviation",
-            columns="EventName",
-            values="ResultLabel",
-            aggfunc="first",
-        )
-        .reindex(index=driver_order, columns=event_order)
-        .fillna("—")
-    )
-    z = value.astype("Float64").fillna(21).astype(float)
-    fig = go.Figure(
-        go.Heatmap(
-            z=z,
-            x=z.columns,
-            y=z.index,
-            text=labels,
-            texttemplate="%{text}",
-            colorscale=[
-                [0, "#16865f"],
-                [0.12, "#66b98d"],
-                [0.45, "#e7c66b"],
-                [1, "#d86666"],
-            ],
-            zmin=1,
-            zmax=21,
-            showscale=False,
-            hovertemplate="<b>%{y}</b> · %{x}<br>Resultado: %{text}<extra></extra>",
-        )
-    )
-    fig.update_layout(xaxis={"tickangle": -35}, yaxis={"autorange": "reversed"})
-    return _apply(fig, max(360, len(value) * 30), legend=False)
-
-
-def grid_to_finish(results: pd.DataFrame, round_number: int) -> go.Figure:
-    d = results[
-        (results["RoundNumber"] == round_number) & results["OfficialGrid"].notna()
-    ].copy()
-    finish = d["OfficialFinish"].fillna(d["Position"])
-    fig = go.Figure()
-    for (_, row), end in zip(d.iterrows(), finish):
-        color = (
-            POSITIVE
-            if row["OfficialGrid"] > end
-            else NEGATIVE
-            if row["OfficialGrid"] < end
-            else NEUTRAL
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=["Grid", "Chegada"],
-                y=[row["OfficialGrid"], end],
-                mode="lines+markers+text",
-                line={"color": color, "width": 2},
-                marker={"size": 9},
-                text=[row["Abbreviation"], row["ResultLabel"]],
-                textposition=["middle left", "middle right"],
-                name=row["FullName"],
-                hovertemplate=f"<b>{row['FullName']}</b><br>Grid P{row['OfficialGrid']:.0f}<br>Resultado {row['ResultLabel']}<extra></extra>",
-            )
-        )
-    fig.update_yaxes(autorange="reversed", dtick=1, title="Posição")
-    fig.update_layout(showlegend=False, xaxis={"side": "top", "title": ""})
-    return _apply(fig, 560, legend=False)
-
-
-def driver_dumbbell(stats: pd.DataFrame, drivers: list[str]) -> go.Figure:
-    d = stats[stats["DriverId"].isin(drivers)].set_index("DriverId")
-    metrics = [
-        ("Points", "Pontos"),
-        ("Wins", "Vitórias"),
-        ("Podiums", "Pódios"),
-        ("AvgGrid", "Média grid"),
-        ("AvgFinish", "Média chegada"),
-        ("DNFRate", "Taxa DNF"),
-    ]
-    names = d["FullName"].to_dict()
-
-    def display_value(metric: str, value: float) -> str:
-        if pd.isna(value):
-            return "—"
-        if metric == "DNFRate":
-            return f"{value:.1%}"
-        if metric in {"AvgGrid", "AvgFinish"}:
-            return f"P{value:.1f}"
-        return f"{value:.0f}"
-
-    fig = go.Figure()
-    for metric, label in metrics:
-        field = stats[metric].dropna()
-        lo, hi = field.min(), field.max()
-        vals = []
-        for driver in drivers:
-            value = d.loc[driver, metric]
-            score = 50 if hi == lo else (value - lo) / (hi - lo) * 100
-            if metric in {"AvgGrid", "AvgFinish", "DNFRate"}:
-                score = 100 - score
-            vals.append((score, value))
-        fig.add_trace(
-            go.Scatter(
-                x=[vals[0][0], vals[1][0]],
-                y=[label, label],
-                mode="lines",
-                line={"color": GRID, "width": 4},
-                showlegend=False,
-                hoverinfo="skip",
-            )
-        )
-        for i, driver in enumerate(drivers):
+def race_by_race(frame: pd.DataFrame, color: str) -> go.Figure:
+    """Haltere grid → chegada; abandonos aparecem no grid com ×."""
+    fig = _figure(360)
+    labels = [f"R{number:02d}" for number in frame["round_number"]]
+    for label, grid, finish in zip(
+        labels, frame["official_grid"], frame["official_finish"], strict=True
+    ):
+        if pd.notna(grid) and pd.notna(finish):
             fig.add_trace(
                 go.Scatter(
-                    x=[vals[i][0]],
-                    y=[label],
-                    mode="markers",
-                    marker={"size": 13, "color": d.loc[driver, "TeamColor"]},
-                    name=names[driver],
-                    legendgroup=driver,
-                    showlegend=metric == "Points",
-                    customdata=[[display_value(metric, vals[i][1])]],
-                    hovertemplate=f"<b>{names[driver]}</b><br>{label}: %{{customdata[0]}}<extra></extra>",
+                    x=[label, label],
+                    y=[grid, finish],
+                    mode="lines",
+                    line={"color": AXIS, "width": 3},
+                    hoverinfo="skip",
+                    showlegend=False,
                 )
             )
-    fig.update_layout(
-        xaxis={
-            "title": "Desempenho relativo · melhor à direita",
-            "range": [-5, 105],
-            "tickvals": [0, 50, 100],
-            "ticktext": ["Pior", "Médio", "Melhor"],
-        },
-        yaxis_title="",
-        legend={"orientation": "h", "y": -0.23},
-    )
-    return _apply(fig, 420)
-
-
-def constructor_points(teams: pd.DataFrame) -> go.Figure:
-    d = teams.sort_values("Points")
-    fig = go.Figure(
-        go.Bar(
-            x=d["Points"],
-            y=d["TeamName"],
-            orientation="h",
-            marker_color=d["TeamColor"],
-            text=d["Points"],
-            texttemplate="%{text:.0f}",
-            textposition="outside",
-            customdata=d[["Wins", "Podiums", "Reliability"]],
-            hovertemplate="<b>%{y}</b><br>%{x:.0f} pts<br>Vitórias: %{customdata[0]}<br>Pódios: %{customdata[1]}<br>Confiabilidade: %{customdata[2]:.0%}<extra></extra>",
+    fig.add_trace(
+        go.Scatter(
+            x=labels,
+            y=frame["official_grid"],
+            mode="markers",
+            name="Largada",
+            marker={"size": 9, "color": SURFACE, "line": {"color": MUTED, "width": 2}},
+            customdata=frame[["event_name"]],
+            hovertemplate="%{customdata[0]}<br>Largou P%{y}<extra></extra>",
         )
     )
-    fig.update_layout(xaxis_title="Pontos dos construtores", yaxis_title="")
-    return _apply(fig, max(340, len(d) * 42), legend=False)
-
-
-def teammate_duels(h2h: pd.DataFrame) -> go.Figure:
-    d = h2h.sort_values("PointsA")
-    limit = max(1, int(d[["RaceWinsA", "RaceWinsB"]].to_numpy().max()))
-    ticks = list(range(-limit, limit + 1))
-    fig = go.Figure()
-    fig.add_bar(
-        x=d["RaceWinsA"],
-        y=d["TeamName"],
-        orientation="h",
-        marker_color="#2f78d1",
-        text=[f"{a} {int(n)}" for a, n in zip(d["abbr_a"], d["RaceWinsA"])],
-        textposition="inside",
-        name="Piloto A",
-    )
-    fig.add_bar(
-        x=-d["RaceWinsB"],
-        y=d["TeamName"],
-        orientation="h",
-        marker_color="#e99b32",
-        text=[f"{b} {int(n)}" for b, n in zip(d["abbr_b"], d["RaceWinsB"])],
-        textposition="inside",
-        name="Piloto B",
-    )
-    fig.update_layout(
-        barmode="relative",
-        xaxis_title="← B à frente · corridas em comum · A à frente →",
-        xaxis={
-            "range": [-limit - 0.5, limit + 0.5],
-            "tickvals": ticks,
-            "ticktext": [str(abs(value)) for value in ticks],
-        },
-        yaxis_title="",
-        legend={"orientation": "h", "y": -0.22},
-    )
-    fig.add_vline(x=0, line_color=GRID, line_width=1)
-    return _apply(fig, max(340, len(d) * 46))
-
-
-def importance_bar(importances: dict[str, float], k: int = 15) -> go.Figure:
-    ranked = sorted(importances.items(), key=lambda item: item[1], reverse=True)[:k][
-        ::-1
-    ]
-    fig = go.Figure(
-        go.Bar(
-            x=[v for _, v in ranked],
-            y=[f for f, _ in ranked],
-            orientation="h",
-            marker_color=ACCENT,
-            hovertemplate="%{y}<br>Importância: %{x:.3f}<extra></extra>",
+    finished = frame["official_finish"].notna()
+    fig.add_trace(
+        go.Scatter(
+            x=[label for label, ok in zip(labels, finished, strict=True) if ok],
+            y=frame.loc[finished, "official_finish"],
+            mode="markers",
+            name="Chegada",
+            marker={"size": 11, "color": color, "line": {"color": SURFACE, "width": 2}},
+            customdata=frame.loc[finished, ["event_name", "points"]],
+            hovertemplate="%{customdata[0]}<br>Chegou P%{y} · %{customdata[1]} pts"
+            "<extra></extra>",
         )
     )
-    fig.update_layout(xaxis_title="Importância global do modelo", yaxis_title="")
-    return _apply(fig, max(340, len(ranked) * 28), legend=False)
-
-
-def contribution_bar(explanation: dict) -> go.Figure:
-    rows = pd.DataFrame(explanation.get("contributions", []))
-    if rows.empty:
-        return _apply(go.Figure(), 320, legend=False)
-    rows = rows.sort_values("contribution")
-    fig = go.Figure(
-        go.Bar(
-            x=rows["contribution"],
-            y=rows["feature"],
-            orientation="h",
-            marker_color=[
-                POSITIVE if v >= 0 else NEGATIVE for v in rows["contribution"]
-            ],
-            customdata=rows[["value"]],
-            hovertemplate="%{y}<br>Contribuição: %{x:+.4f}<br>Valor: %{customdata[0]}<extra></extra>",
-        )
-    )
-    fig.add_vline(x=0, line_color=NEUTRAL)
-    fig.update_layout(
-        xaxis_title="Contribuição SHAP para a classe campeão", yaxis_title=""
-    )
-    return _apply(fig, max(340, len(rows) * 30), legend=False)
-
-
-def model_performance(evaluations: list[dict]) -> go.Figure:
-    d = pd.DataFrame(evaluations)
-    fig = go.Figure()
-    if not d.empty and {"season", "top1_accuracy"}.issubset(d):
+    out = frame[~finished]
+    if len(out):
         fig.add_trace(
             go.Scatter(
-                x=d["season"],
-                y=d["top1_accuracy"],
+                x=[f"R{number:02d}" for number in out["round_number"]],
+                y=out["official_grid"].fillna(1),
+                mode="markers",
+                name="Não completou",
+                marker={
+                    "size": 12,
+                    "symbol": "x-thin",
+                    "line": {"color": NEGATIVE, "width": 2},
+                },
+                customdata=out[["event_name", "result_status"]],
+                hovertemplate="%{customdata[0]}<br>%{customdata[1]}<extra></extra>",
+            )
+        )
+    worst = int(frame[["official_grid", "official_finish"]].max().max(skipna=True) or 1)
+    ticks = list(range(1, worst + 1)) if worst <= 10 else [1, *range(5, worst + 1, 5)]
+    fig.update_yaxes(title="Posição", autorange="reversed", tickvals=ticks)
+    # Ordem das etapas fixa: o primeiro traço pode não conter todas as categorias.
+    fig.update_xaxes(type="category", categoryorder="array", categoryarray=labels)
+    return fig
+
+
+def career(frame: pd.DataFrame) -> go.Figure:
+    fig = _figure(300)
+    fig.add_trace(
+        go.Scatter(
+            x=frame["season"],
+            y=frame["rank"],
+            # Rótulos só em carreiras curtas; nas longas, o hover dá a posição.
+            mode="lines+markers+text" if len(frame) <= 8 else "lines+markers",
+            text=[f"P{rank}" for rank in frame["rank"]],
+            textposition="top center",
+            textfont={"color": INK_2, "size": 11},
+            line={"color": ACCENT, "width": 2},
+            marker={"size": 8},
+            customdata=frame[["team", "points"]],
+            hovertemplate="%{x} · %{customdata[0]}<br>P%{y} · %{customdata[1]} pts"
+            "<extra></extra>",
+        )
+    )
+    fig.update_xaxes(
+        title="Temporada", tickformat="d", dtick=1 if len(frame) < 12 else None
+    )
+    fig.update_yaxes(title="Posição final", autorange="reversed", tick0=1)
+    return fig
+
+
+def odds(latest: pd.DataFrame) -> go.Figure:
+    """Chance de título com intervalo p10–p90 quando a API o fornece."""
+    data = latest.iloc[::-1]
+    fig = _figure(max(280, 34 * len(data) + 60))
+    error = None
+    if {"lower", "upper"}.issubset(data.columns):
+        error = {
+            "type": "data",
+            "symmetric": False,
+            "array": (data["upper"] - data["probability"]).clip(lower=0),
+            "arrayminus": (data["probability"] - data["lower"]).clip(lower=0),
+            "color": INK_2,
+            "thickness": 1.5,
+            "width": 4,
+        }
+    fig.add_trace(
+        go.Bar(
+            x=data["probability"],
+            y=data["driver"],
+            orientation="h",
+            marker={
+                "color": data["color"].replace(metrics.FALLBACK_COLOR, ACCENT),
+                "cornerradius": 3,
+            },
+            error_x=error,
+            hovertemplate="%{y}: %{x:.1%}<extra></extra>",
+        )
+    )
+    fig.update_layout(bargap=0.35, margin={"t": 8})
+    fig.update_xaxes(
+        tickformat=".0%", showgrid=True, gridcolor=GRID, rangemode="tozero"
+    )
+    fig.update_yaxes(showgrid=False, ticklabelstandoff=8)
+    return fig
+
+
+def odds_evolution(frame: pd.DataFrame) -> go.Figure:
+    fig = _figure(380)
+    styles = identity_styles(frame)
+    for driver_id, data in frame.groupby("driver_id", sort=False):
+        first = data.iloc[0]
+        color, dash = styles[driver_id]
+        fig.add_trace(
+            go.Scatter(
+                x=data["dt_ref"],
+                y=data["probability"],
+                name=first["driver"],
                 mode="lines+markers",
-                name="Modelo",
-                line={"color": ACCENT, "width": 3},
+                line={"color": color, "width": 2, "dash": dash},
+                marker={"size": 5},
+                hovertemplate="%{x|%d/%m}: %{y:.1%}<extra>%{fullData.name}</extra>",
             )
         )
-        if "baseline_accuracy" in d:
-            fig.add_trace(
-                go.Scatter(
-                    x=d["season"],
-                    y=d["baseline_accuracy"],
-                    mode="lines+markers",
-                    name="Líder atual",
-                    line={"color": NEUTRAL, "dash": "dot"},
-                )
-            )
-    fig.update_layout(
-        yaxis={"title": "Acerto do campeão", "tickformat": ".0%", "range": [0, 1]},
-        xaxis_title="Temporada de teste",
-        legend={"orientation": "h", "y": -0.22},
+    fig.update_layout(hovermode="x unified")
+    fig.update_yaxes(title="Chance de título", tickformat=".0%", rangemode="tozero")
+    fig.update_xaxes(title="Data de referência")
+    return fig
+
+
+def importances(frame: pd.DataFrame) -> go.Figure:
+    data = frame.iloc[::-1]
+    fig = _figure(max(300, 26 * len(data) + 60))
+    fig.add_trace(
+        go.Bar(
+            x=data["importance"],
+            y=data["label"],
+            orientation="h",
+            marker={"color": ACCENT, "cornerradius": 3},
+            hovertemplate="%{y}<br>%{x:.1%} da importância<extra></extra>",
+        )
     )
-    return _apply(fig, 380)
+    fig.update_layout(bargap=0.3, margin={"t": 8})
+    fig.update_xaxes(tickformat=".0%", showgrid=True, gridcolor=GRID)
+    fig.update_yaxes(showgrid=False, ticklabelstandoff=8)
+    return fig
 
 
-def calibration_curve(points: list[dict]) -> go.Figure:
-    d = pd.DataFrame(points)
-    fig = go.Figure()
+def contributions(frame: pd.DataFrame) -> go.Figure:
+    """SHAP: barras para a direita aumentam a chance; para a esquerda, reduzem."""
+    data = frame.iloc[::-1]
+    fig = _figure(max(300, 30 * len(data) + 60))
+    fig.add_trace(
+        go.Bar(
+            x=data["contribution"],
+            y=data["label"],
+            orientation="h",
+            marker={
+                "color": [
+                    ACCENT if value >= 0 else NEGATIVE for value in data["contribution"]
+                ],
+                "cornerradius": 3,
+            },
+            customdata=data[["value"]],
+            hovertemplate="%{y}<br>valor %{customdata[0]:,.2f} · efeito %{x:+.3f}"
+            "<extra></extra>",
+        )
+    )
+    fig.update_layout(bargap=0.3, margin={"t": 8})
+    fig.update_xaxes(zeroline=True, zerolinecolor=AXIS, showgrid=True, gridcolor=GRID)
+    fig.update_yaxes(showgrid=False, ticklabelstandoff=8)
+    return fig
+
+
+def calibration(points: pd.DataFrame) -> go.Figure:
+    fig = _figure(320)
     fig.add_trace(
         go.Scatter(
             x=[0, 1],
             y=[0, 1],
             mode="lines",
-            name="Calibração ideal",
-            line={"color": NEUTRAL, "dash": "dot"},
+            line={"color": AXIS, "width": 1},
+            hoverinfo="skip",
+            showlegend=False,
         )
     )
-    if not d.empty and {"predicted", "observed"}.issubset(d):
+    fig.add_trace(
+        go.Scatter(
+            x=points["predicted"],
+            y=points["observed"],
+            mode="lines+markers",
+            line={"color": ACCENT, "width": 2},
+            marker={"size": 7},
+            hovertemplate="previsto %{x:.0%} · observado %{y:.0%}<extra></extra>",
+            showlegend=False,
+        )
+    )
+    fig.update_xaxes(title="Probabilidade prevista", tickformat=".0%", range=[0, 1])
+    fig.update_yaxes(title="Frequência observada", tickformat=".0%", range=[0, 1])
+    return fig
+
+
+def coverage(frame: pd.DataFrame) -> go.Figure:
+    colors = {"completa": ACCENT, "parcial": WARNING, "em andamento": "#199e70"}
+    fig = _figure(300)
+    for status, data in frame.groupby("status", sort=False):
         fig.add_trace(
-            go.Scatter(
-                x=d["predicted"],
-                y=d["observed"],
-                mode="lines+markers",
-                name="Modelo",
-                line={"color": ACCENT, "width": 3},
+            go.Bar(
+                x=data["season"],
+                y=data["races"],
+                name=status.capitalize(),
+                marker={"color": colors.get(status, MUTED), "cornerradius": 2},
+                hovertemplate="%{x}: %{y} corridas<extra>" + status + "</extra>",
             )
         )
-    fig.update_layout(
-        xaxis={"title": "Probabilidade prevista", "tickformat": ".0%", "range": [0, 1]},
-        yaxis={"title": "Frequência observada", "tickformat": ".0%", "range": [0, 1]},
-        legend={"orientation": "h", "y": -0.22},
-    )
-    return _apply(fig, 380)
+    fig.update_layout(barmode="overlay", bargap=0.25)
+    fig.update_xaxes(tickformat="d")
+    fig.update_yaxes(title="Corridas no lake")
+    return fig
