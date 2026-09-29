@@ -281,6 +281,7 @@ dependencies = [
     { name = "deltalake" },
     { name = "pandas" },
     { name = "plotly" },
+    { name = "pyarrow" },
     { name = "requests" },
     { name = "streamlit" },
 ]
@@ -295,6 +296,7 @@ requires-dist = [
     { name = "deltalake", specifier = ">=1.6.2" },
     { name = "pandas", specifier = ">=2.0.0,<3.0.0" },
     { name = "plotly", specifier = ">=5.0.0" },
+    { name = "pyarrow", specifier = ">=19" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "streamlit", specifier = ">=1.61.1" },
 ]

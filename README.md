@@ -12,7 +12,7 @@ O Lake FastF1 foi construído como um projeto de engenharia de dados ponta a pon
 - **Lakehouse local:** camadas Raw, Bronze e Silver com tabelas de resultados, estatísticas, features de treino e marts analíticos.
 - **Modelo preditivo:** estimativa calibrada da probabilidade de cada piloto vencer o campeonato.
 - **Transparência:** backtests rolling-origin, baseline de pontos recentes, model card, explicações SHAP e intervalos de dispersão do ensemble.
-- **Produtos analíticos:** Streamlit com análises e saúde do modelo; Dash / Race Control com leitura rápida de temporada, corridas, previsão e eras.
+- **Produtos analíticos:** Streamlit Paddock com temporada, pilotos, previsão e dados do lake; Dash / Race Control com leitura rápida de temporada, corridas, previsão e eras.
 - **Integrações:** Airflow para orquestração, MLflow para tracking/registry, FastAPI para serving, MySQL para espelho analítico e S3 para arquivamento opcional.
 
 ## Arquitetura e fluxo do projeto
@@ -80,7 +80,7 @@ flowchart LR
 3. **Silver:** `src/silver_data.py` executa as consultas em `src/queries/` e produz campeões, janelas móveis de estatísticas, a tabela consolidada de features, `tb_abt` e os marts analíticos.
 4. **Consumo externo:** a tarefa `sender_mysql` replica Bronze e Silver para MySQL. O envio dos arquivos Raw para S3 é independente, manual e opcional.
 5. **Treinamento:** `src/train_driver_champion.py` lê `tb_abt`, exclui a temporada corrente, executa backtests cronológicos, calibra o modelo e registra o artefato e o model card no MLflow.
-6. **Serving e análise:** a FastAPI carrega o modelo registrado; o Streamlit combina dados Delta filtrados com previsões, explicações e metadados do modelo.
+6. **Serving e análise:** a FastAPI carrega o modelo registrado; o Streamlit lê os marts e a ABT do Silver e combina esses dados com previsões, explicações e metadados do modelo.
 
 ## Camadas de dados
 
@@ -95,16 +95,18 @@ Os grãos, chaves, domínios e expectativas de qualidade dos marts estão docume
 
 ## Produto analítico
 
-O dashboard Streamlit possui quatro jornadas. Temporada, pilotos em destaque e janela de tendência funcionam como filtros globais.
+O Streamlit **Paddock** (tema escuro) apresenta os dados que o pipeline produz, em quatro
+páginas. A temporada escolhida na barra lateral vale para todas e fica na URL (`?ano=2024`).
 
 | Página | Pergunta respondida | Conteúdo |
 |---|---|---|
-| **Visão geral** | Quem controla o campeonato e o que mudou? | KPIs, ranking, chances do título e resumo editorial |
-| **Campeonato** | Como a disputa evoluiu rodada a rodada? | Pontos acumulados, bump chart, matriz de resultados e grid → chegada |
-| **Comparador** | Onde estão as diferenças entre pilotos e equipes? | Dumbbells, construtores e duelos entre companheiros |
-| **Modelo & dados** | A previsão é confiável e os dados estão atualizados? | Backtests, calibração, importância global, SHAP e saúde dos dados |
+| **Temporada** | Como está o campeonato? | KPIs, disputa pelo título (pontos ou posição por rodada), classificação de pilotos com forma recente, construtores e resultado de cada GP |
+| **Pilotos** | Como foi a temporada e a carreira de um piloto? | Corrida a corrida (grid → chegada), duelo com o companheiro, forma nas janelas do Silver e carreira no lake desde 1980 (`?piloto=`) |
+| **Previsão e modelo** | O que o modelo espera e por quê? | Chances de título com faixa p10–p90, evolução na temporada, explicação SHAP por piloto, importância global e model card |
+| **Dados do lake** | O que existe no lake e está íntegro? | Linhagem, catálogo Delta (versão, linhas, última escrita), regras de qualidade dos marts e cobertura por temporada |
 
-As páginas carregam apenas os dados necessários para cada visão. As leituras Delta usam projeção de colunas, filtro por temporada e cache associado à versão da tabela. Quando os marts opcionais não estão materializados, o dashboard recompõe as métricas a partir do Bronze.
+As leituras Delta usam projeção de colunas e filtros, com cache pela versão da tabela. Só a
+página de previsão chama a API; se ela estiver fora, as demais continuam funcionando.
 
 ### Regras analíticas importantes
 
@@ -213,7 +215,7 @@ O DAG do Airflow executa o caminho de ingestão, Bronze, Silver e MySQL. O coman
 | MySQL | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_ID_TABLE`, `MYSQL_USER`, `MYSQL_PASSWORD` |
 | S3 opcional | `AWS_KEY`, `AWS_SECRET_KEY`, `REGION_NAME` |
 
-Consulte o [.env.example](.env.example) para os valores esperados. Os caminhos `TABLE_PATH_*` do Streamlit são definidos no `docker-compose.yml` e representam os mounts somente leitura disponíveis no container.
+Consulte o [.env.example](.env.example) para os valores esperados. No Compose, o Streamlit lê o lake em `LAKE_ROOT=/data` (a pasta `data/` montada somente leitura); o Dash usa os caminhos `TABLE_PATH_*` definidos no `docker-compose.yml`.
 
 ## API de previsões
 
@@ -256,7 +258,7 @@ O projeto possui quatro ambientes `uv` independentes: raiz, API, Streamlit e Das
 ```bash
 uv run pytest
 (cd app/api && uv run pytest)
-(cd app/streamlit && uv run pytest)
+(cd app/streamlit && uv run --locked pytest)
 (cd app/dash && uv run --locked pytest)
 uv run ruff check .
 uv run ruff format --check .
@@ -279,7 +281,7 @@ lake-fastf1/
 ├── app/
 │   ├── api/                  # previsão, explicações e model card
 │   ├── dash/                 # Race Control: temporada, corridas, previsão e eras
-│   └── streamlit/            # páginas, dados, semântica e gráficos
+│   └── streamlit/            # Paddock: views/ + lake, métricas, gráficos e cliente da API
 ├── dags/                     # DAG de ingestão e transformação
 ├── docs/                     # contratos e documentação complementar
 ├── scripts/                  # benchmarks e ferramentas de desenvolvimento

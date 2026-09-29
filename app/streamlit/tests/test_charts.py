@@ -1,63 +1,45 @@
-"""Contratos estruturais dos gráficos editoriais."""
-
 import pandas as pd
 
 import charts
+import metrics
 
 
-def test_probability_ranking_is_ordered_horizontal_bar():
+def test_identity_uses_team_colors_and_dots_the_teammate():
     frame = pd.DataFrame(
         {
-            "FullName": ["A", "B"],
-            "TeamName": ["T1", "T2"],
-            "TeamColor": ["#111111", "#222222"],
-            "latest": [0.7, 0.3],
-            "delta_prev": [0.1, -0.1],
+            "driver_id": ["a", "b", "c"],
+            "team_name": ["X", "X", "Y"],
+            "color": ["#3671C6", "#3671C6", "#FF8000"],
         }
     )
-    figure = charts.probability_ranking(frame)
-    assert figure.data[0].orientation == "h"
-    assert list(figure.data[0].y) == ["B", "A"]
-    assert figure.data[0].customdata[0][0] == "-10.0 pp"
+    styles = charts.identity_styles(frame)
+    assert styles == {
+        "a": ("#3671C6", "solid"),
+        "b": ("#3671C6", "dot"),
+        "c": ("#FF8000", "solid"),
+    }
 
 
-def test_result_heatmap_respects_round_and_driver_order():
+def test_identity_falls_back_to_palette_without_team_colors():
     frame = pd.DataFrame(
         {
-            "RoundNumber": [2, 1, 2, 1],
-            "EventName": ["Second", "First", "Second", "First"],
-            "Abbreviation": ["AAA", "AAA", "BBB", "BBB"],
-            "OfficialFinish": [2, 1, 1, pd.NA],
-            "ResultLabel": ["P2", "P1", "P1", "DNF"],
+            "driver_id": ["a", "b"],
+            "team": ["X", "X"],
+            "color": [metrics.FALLBACK_COLOR] * 2,
         }
     )
-    figure = charts.result_heatmap(frame, ["BBB", "AAA"])
-    assert list(figure.data[0].x) == ["First", "Second"]
-    assert list(figure.data[0].y) == ["BBB", "AAA"]
+    assert charts.identity_styles(frame) == {
+        "a": (charts.SERIES[0], "solid"),
+        "b": (charts.SERIES[1], "solid"),
+    }
 
 
-def test_calibration_chart_always_contains_reference_line():
-    figure = charts.calibration_curve([])
-    assert len(figure.data) == 1
-    assert list(figure.data[0].x) == [0, 1]
-
-
-def test_driver_comparison_labels_relative_scale_without_percent_suffix():
-    frame = pd.DataFrame(
-        {
-            "DriverId": ["a", "b"],
-            "FullName": ["A", "B"],
-            "TeamColor": ["#111111", "#222222"],
-            "Points": [100, 80],
-            "Wins": [3, 1],
-            "Podiums": [5, 4],
-            "AvgGrid": [2.5, 4.0],
-            "AvgFinish": [3.0, 5.0],
-            "DNFRate": [0.1, 0.2],
-        }
-    )
-
-    figure = charts.driver_dumbbell(frame, ["a", "b"])
-
-    assert list(figure.layout.xaxis.ticktext) == ["Pior", "Médio", "Melhor"]
-    assert figure.data[-2].customdata[0][0] == "10.0%"
+def test_race_by_race_keeps_round_order_with_retirements(driver_round):
+    rounds = metrics.race_by_race(driver_round[driver_round["season"].eq(2024)], "b")
+    figure = charts.race_by_race(rounds, "#3671C6")
+    assert list(figure.layout.xaxis.categoryarray) == ["R01", "R02", "R03"]
+    assert [trace.name for trace in figure.data if trace.name] == [
+        "Largada",
+        "Chegada",
+        "Não completou",
+    ]
