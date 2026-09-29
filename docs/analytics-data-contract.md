@@ -4,7 +4,7 @@
 
 - **Owner:** projeto Lake FastF1.
 - **Origem:** resultados FastF1 consolidados em `bronze/results`.
-- **Consumidores:** Streamlit, espelho MySQL e análises de BI.
+- **Consumidores:** Streamlit, espelho MySQL e análises de BI. O Dash lê diretamente Bronze e ABT e aplica as mesmas regras de resultados em sua camada analítica independente.
 - **Atualização:** semanal, após a ingestão do resultado mais recente.
 
 ## `mart_driver_round`
@@ -16,6 +16,7 @@
 - `official_finish` existe apenas para classificação numérica.
 - `result_status` pertence a `FINISHED`, `DNF`, `DNS`, `DNQ`, `DSQ` ou `NC`.
 - `started` é falso para DNS e DNQ.
+- No Dash, abandono é uma largada cujo `Status` não indica conclusão (`Finished`, `Lapped`, `+N Laps`), excluindo desclassificações; o motivo vem do texto de `Status`, e `Time` do 2º colocado na mesma volta define a margem de vitória.
 
 ## `mart_standings`
 

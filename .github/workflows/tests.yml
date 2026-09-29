@@ -29,6 +29,7 @@ jobs:
           - { name: root, dir: . }
           - { name: api, dir: app/api }
           - { name: streamlit, dir: app/streamlit }
+          - { name: dash, dir: app/dash }
     name: pytest (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4

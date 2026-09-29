@@ -8,7 +8,7 @@ A long-term data engineering / ML project for Formula 1 data. It pulls race and 
 
 ## Commands
 
-Root project uses `uv` (Python >=3.13). `app/api` and `app/streamlit` are separate `uv` projects with their own `pyproject.toml`.
+Root project uses `uv` (Python >=3.13). `app/api`, `app/streamlit` and `app/dash` are separate `uv` projects with their own `pyproject.toml`.
 
 ```bash
 # Install root deps
@@ -18,7 +18,7 @@ uv sync
 uv run ruff check .
 uv run ruff format .
 
-# Run the whole stack (Airflow :8080, FastAPI :5002, Streamlit :8501)
+# Run the whole stack (Airflow :8080, FastAPI :5002, Streamlit :8501, Dash :8050)
 docker compose up --build -d
 
 # Run pipeline stages locally/ad hoc (each module has a __main__)
@@ -31,11 +31,12 @@ uv run python -m src.train_driver_champion  # train model, log to MLflow
 # When run via docker compose, AIRFLOW_HOME is /opt/airflow/project/.airflow
 # and the DAGs folder is /opt/airflow/project/dags (repo root mounted at /opt/airflow/project)
 
-# Tests (pytest). Three separate suites — each its own uv project:
+# Tests (pytest). Four separate suites — each its own uv project:
 uv run pytest                              # root: src/ (tests/)
 uv run pytest --cov=src --cov-report=term-missing
 (cd app/api && uv run pytest)              # FastAPI routes (app/api/tests/)
 (cd app/streamlit && uv run pytest)        # dashboard pandas helpers (app/streamlit/tests/)
+(cd app/dash && uv run --locked pytest)    # analytics, Delta/API contracts, pages and callbacks
 ```
 
 The test suites are deliberately infra-free: FastF1 (network), Spark/Delta (JVM), MLflow, MySQL
@@ -64,6 +65,7 @@ constraint; ruff is pinned to `0.16.2` (matches the root dep).
 Each app has its own Dockerfile and is built independently by `docker-compose.yml`:
 - `app/api` — FastAPI service, own `pyproject.toml`/`uv.lock`
 - `app/streamlit` — Streamlit dashboard, own `pyproject.toml`/`uv.lock`
+- `app/dash` — independent Race Control dashboard, own `pyproject.toml`/`uv.lock`; Gunicorn container
 
 `.devcontainer/` (VS Code, "Python 3.13 and Java 17") is the one place the Spark/Delta stages
 run without extra setup — it presets `JAVA_HOME` and `PYSPARK_SUBMIT_ARGS` and forwards Jupyter
@@ -112,6 +114,19 @@ All Silver SQL files are read as raw strings and `.format()`-ed (not parameteriz
 - **`app/api/main.py`** (FastAPI): serves `MLFLOW_MODEL_REGISTERED`. `model_find` caches the loaded model for `MODEL_CACHE_TTL` seconds. `POST /v1/predict` normalizes candidates per snapshot and accepts `include_intervals` (default `true`); disabling it skips member-level ensemble scoring. The legacy `/predict` contract remains unchanged.
 
 - **`app/streamlit/`** (dashboard) — reads Delta with season predicates and column projection, keyed by the current Delta version so caches refresh after a table update. Each page loads only its own dependencies; Campeonato and Comparador never call the prediction API. `load_predictions(year)` requests point estimates without ensemble intervals and degrades safely when the API or ABT is unavailable.
+
+### Dash interface
+
+`app/dash/` (Race Control) is a Dash Pages app independent of Streamlit: `pages/`
+holds `temporada` (`/`), `corridas`, `previsao` and `eras`, each a `layout(**query)`
+rendered server-side from URL params (`?ano=`, `?de=&ate=`) plus small targeted
+callbacks. `analytics.py` is pure pandas (results cleaning + findings),
+`figures.py` registers the `race_control` Plotly template, `components.py` holds
+shared UI, `repository.py` does projected/predicate Delta reads cached by table
+version (60 s TTL) and is resolved via `get_repository()` / `set_repository()` so
+tests inject a fake. Only the forecast callback calls the API. `dcc.Graph` uses
+`responsive=True`, so chart height must come from its `style`, never the figure.
+Run with `uv run --project app/dash python app/dash/main.py` (port 8050).
 
 ### Spark/Delta conventions
 
