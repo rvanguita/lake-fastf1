@@ -107,11 +107,11 @@ All Silver SQL files are read as raw strings and `.format()`-ed (not parameteriz
 
 ### Model training
 
-`src/train_driver_champion.py` reads `tb_abt` from Silver, filters the current/incomplete season in Spark before collecting to pandas, performs rolling-origin backtests, fits a `SimpleImputer` + `RandomForestClassifier` pipeline, calibrates probabilities and logs the model plus model card to MLflow. Feature selection is name-based through `NON_FEATURES`, so column order is not part of the contract.
+`src/train_driver_champion.py` reads `tb_abt` from Silver, filters the current/incomplete season in Spark before collecting to pandas, performs rolling-origin backtests, fits a `SimpleImputer` + `RandomForestClassifier` pipeline, calibrates probabilities and logs the model plus model card to MLflow. Feature selection is name-based through `NON_FEATURES`, so column order is not part of the contract. MLflow 3 saves sklearn models in **skops** format and only reopens the types listed in `SKOPS_TRUSTED_TYPES` (passed to `log_model`); add any new custom/tree type there, and keep the `__main__` block importing `main` from `src.train_driver_champion` so custom classes are serialized under an importable module.
 
 ### Serving layer
 
-- **`app/api/main.py`** (FastAPI): serves `MLFLOW_MODEL_REGISTERED`. `model_find` caches the loaded model for `MODEL_CACHE_TTL` seconds. `POST /v1/predict` normalizes candidates per snapshot and accepts `include_intervals` (default `true`); disabling it skips member-level ensemble scoring. The legacy `/predict` contract remains unchanged.
+- **`app/api/main.py`** (FastAPI): serves `MLFLOW_MODEL_REGISTERED`. `model_find` caches the loaded model for `MODEL_CACHE_TTL` seconds and logs the real load error (routes still answer 500 "Model not found"). `_load_local_model` opens skops models with the `MLmodel` trusted types plus `MODEL_SKOPS_TRUSTED_TYPES` (default `sklearn.tree._tree.Tree`), so models saved under an older skops keep loading. The image installs `uv.lock` (`uv sync --frozen`); unpinned installs once pulled a newer skops that rejected the registered model. `POST /v1/predict` normalizes candidates per snapshot and accepts `include_intervals` (default `true`); disabling it skips member-level ensemble scoring. The legacy `/predict` contract remains unchanged.
 
 - **`app/streamlit/`** (dashboard) — reads Delta with season predicates and column projection, keyed by the current Delta version so caches refresh after a table update. Each page loads only its own dependencies; Campeonato and Comparador never call the prediction API. `load_predictions(year)` requests point estimates without ensemble intervals and degrades safely when the API or ABT is unavailable.
 

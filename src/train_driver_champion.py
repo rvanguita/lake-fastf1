@@ -20,6 +20,13 @@ from sklearn.calibration import calibration_curve
 from sklearn.linear_model import LogisticRegression
 
 NON_FEATURES = {"dt_ref", "DriverId", "flChampion", "Year", "id"}
+# O MLflow grava o modelo em skops e só o reabre com os tipos declarados aqui.
+# Todos são produzidos por este script; a API acrescenta apenas a mesma lista revisada.
+SKOPS_TRUSTED_TYPES = [
+    "numpy.dtype",
+    "sklearn.tree._tree.Tree",
+    "src.train_driver_champion.TemporalCalibratedClassifier",
+]
 
 
 class TemporalCalibratedClassifier:
@@ -259,6 +266,7 @@ def train_and_log(frame: pd.DataFrame):
             registered_model_name=os.environ["MLFLOW_MODEL_REGISTERED"],
             input_example=prepared[features].head(3),
             code_paths=[str(Path(__file__).resolve().parents[1] / "src")],
+            skops_trusted_types=SKOPS_TRUSTED_TYPES,
         )
     return model
 
@@ -282,4 +290,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Importa pelo nome do pacote: executado com `-m`, as classes deste arquivo
+    # seriam gravadas como `__main__.*`, que a API não consegue importar.
+    from src.train_driver_champion import main as run
+
+    run()
