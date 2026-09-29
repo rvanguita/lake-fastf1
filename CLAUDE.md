@@ -35,7 +35,7 @@ uv run python -m src.train_driver_champion  # train model, log to MLflow
 uv run pytest                              # root: src/ (tests/)
 uv run pytest --cov=src --cov-report=term-missing
 (cd app/api && uv run pytest)              # FastAPI routes (app/api/tests/)
-(cd app/streamlit && uv run pytest)        # dashboard pandas helpers (app/streamlit/tests/)
+(cd app/streamlit && uv run --locked pytest)  # metrics, lake, API client and AppTest pages
 (cd app/dash && uv run --locked pytest)    # analytics, Delta/API contracts, pages and callbacks
 ```
 
@@ -47,15 +47,17 @@ and S3 are all mocked or replaced with `tmp_path`, so `pytest` runs in seconds. 
   write-chain (mock DataFrame), and `silver_data.read_sql_file` + the `.format()` brace-safety
   contract of every file in `src/queries/`.
 - **`app/api/tests/`** — the FastAPI routes, model mocked via `main.model_find`.
-- **`app/streamlit/tests/`** — the pandas-only helpers: `compute_*`, `format_color`, `_rank_by`,
-  `_color_map`, `get_id_predictions`.
+- **`app/streamlit/tests/`** — a coherent mini-lake written as real Delta tables in `tmp_path`
+  (`LAKE_ROOT` points at it): pure `metrics`, `lake` (projection, version TTL, catalog),
+  `model_api` (failures not cached, contract checks) and every page through
+  `streamlit.testing.v1.AppTest` with the API mocked.
 
 **Not** covered: the actual SQL transformations / Silver Spark execution (only the query files'
 `.format()` safety is smoke-checked, not what they compute), the DAG, and the training script.
 `app/api` and `app/streamlit` set `[tool.uv] package = false` (not built as wheels); their
 `[dependency-groups].dev` adds `pytest` (and `httpx`, for the API's `TestClient`). `app/api` is
-a single `main.py`; `app/streamlit` is `main.py` + `data.py` + `analytics.py` + `charts.py`
-(the tests import `analytics` / `data` directly).
+a single `main.py`; `app/streamlit` is `main.py` (navigation + season picker) + `views/*.py`
+(pages) + `lake.py`, `model_api.py`, `metrics.py`, `charts.py`, `ui.py`, `fmt.py`.
 
 CI: `.github/workflows/tests.yml` runs on every `push` and `pull_request` — a quality job
 (`uvx ruff@0.16.2 check .` and `format --check .`) plus a `pytest` matrix (one job per uv project,
@@ -81,7 +83,7 @@ Config is entirely via env vars (loaded from `.env`, which is gitignored — the
 
 Key vars: `PATH_RAW`, `PATH_BRONZE`, `PATH_SILVER`, `PATH_QUERIES` (data lake layer paths + SQL directory), `MLFLOW_URI`, `MLFLOW_MODEL_REGISTERED`, `MLFLOW_EXPERIMENT_NAME`, `API_PORT`, `MYSQL_HOST`/`MYSQL_PORT`/`MYSQL_USER`/`MYSQL_PASSWORD`/`MYSQL_ID_TABLE` (used by `src/sender_local.py` to mirror Bronze/Silver Delta tables into MySQL), `AWS_KEY`/`AWS_SECRET_KEY` (used by `src/sender.py` for S3 upload of raw Parquet files).
 
-The Streamlit container additionally uses `TABLE_PATH_SILVER` and `TABLE_PATH_BRONZE` (paths as mounted read-only inside that container, not the same as `PATH_SILVER`/`PATH_BRONZE`) and reaches the API at `http://api-driver-champion:{API_PORT}` (Docker Compose service name), not localhost. `API_URL` can override that address for local execution.
+The Streamlit container reads the whole lake from `LAKE_ROOT` (`/data`, the repo `data/` mounted read-only; locally it defaults to `<repo>/data`) and reaches the API through `API_URL` (`http://api-driver-champion:5002` in Compose, `http://localhost:5002` locally). The Dash container keeps its own `TABLE_PATH_BRONZE`/`TABLE_PATH_SILVER`.
 
 ## Architecture
 
@@ -113,7 +115,7 @@ All Silver SQL files are read as raw strings and `.format()`-ed (not parameteriz
 
 - **`app/api/main.py`** (FastAPI): serves `MLFLOW_MODEL_REGISTERED`. `model_find` caches the loaded model for `MODEL_CACHE_TTL` seconds and logs the real load error (routes still answer 500 "Model not found"). `_load_local_model` opens skops models with the `MLmodel` trusted types plus `MODEL_SKOPS_TRUSTED_TYPES` (default `sklearn.tree._tree.Tree`), so models saved under an older skops keep loading. The image installs `uv.lock` (`uv sync --frozen`); unpinned installs once pulled a newer skops that rejected the registered model. `POST /v1/predict` normalizes candidates per snapshot and accepts `include_intervals` (default `true`); disabling it skips member-level ensemble scoring. The legacy `/predict` contract remains unchanged.
 
-- **`app/streamlit/`** (dashboard) — reads Delta with season predicates and column projection, keyed by the current Delta version so caches refresh after a table update. Each page loads only its own dependencies; Campeonato and Comparador never call the prediction API. `load_predictions(year)` requests point estimates without ensemble intervals and degrades safely when the API or ABT is unavailable.
+- **`app/streamlit/`** ("Paddock", dark theme) — `st.navigation` with four pages in `views/`: Temporada, Pilotos, Previsão e modelo, Dados do lake. Reads the Silver marts (`mart_standings`, `mart_driver_round`), `champions`, `tb_abt` and Bronze via `lake.read` (projection + predicates, cached by Delta version, 60 s version TTL). Season (`?ano=`) and driver (`?piloto=<name>`) are widgets bound with `bind="query-params"`. Only the Previsão page calls the API (`model_api`, which caches successes only). Do not use `driver_statistic_life` for careers: it is a legacy capped window outside the DAG; careers come from the marts.
 
 ### Dash interface
 

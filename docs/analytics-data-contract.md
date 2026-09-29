@@ -4,7 +4,7 @@
 
 - **Owner:** projeto Lake FastF1.
 - **Origem:** resultados FastF1 consolidados em `bronze/results`.
-- **Consumidores:** Streamlit, espelho MySQL e análises de BI. O Dash lê diretamente Bronze e ABT e aplica as mesmas regras de resultados em sua camada analítica independente.
+- **Consumidores:** Streamlit (lê os marts diretamente e verifica as regras de qualidade abaixo na página Dados do lake), espelho MySQL e análises de BI. O Dash lê diretamente Bronze e ABT e aplica as mesmas regras de resultados em sua camada analítica independente.
 - **Atualização:** semanal, após a ingestão do resultado mais recente.
 
 ## `mart_driver_round`
