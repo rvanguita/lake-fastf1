@@ -2,8 +2,6 @@
 
 [![tests](https://github.com/rvanguita/lake-fastf1/actions/workflows/tests.yml/badge.svg)](https://github.com/rvanguita/lake-fastf1/actions/workflows/tests.yml)
 
-![Monoposto percorrendo um circuito formado por fluxos e camadas de dados](img/lake-fastf1-hero.webp)
-
 Uma plataforma de dados e machine learning para transformar resultados históricos da Fórmula 1 em um lakehouse confiável, análises interativas e probabilidades transparentes para o campeonato de pilotos.
 
 O Lake FastF1 foi construído como um projeto de engenharia de dados ponta a ponta. Ele coleta dados da [FastF1](https://docs.fastf1.dev/), persiste os arquivos brutos, organiza tabelas Delta em camadas, materializa datasets analíticos, treina um modelo temporalmente seguro e publica os resultados por uma API e um dashboard.
@@ -14,7 +12,7 @@ O Lake FastF1 foi construído como um projeto de engenharia de dados ponta a pon
 - **Lakehouse local:** camadas Raw, Bronze e Silver com tabelas de resultados, estatísticas, features de treino e marts analíticos.
 - **Modelo preditivo:** estimativa calibrada da probabilidade de cada piloto vencer o campeonato.
 - **Transparência:** backtests rolling-origin, baseline de pontos recentes, model card, explicações SHAP e intervalos de dispersão do ensemble.
-- **Produto analítico:** dashboard Streamlit com visão geral, evolução do campeonato, comparação entre pilotos/equipes e saúde do modelo.
+- **Produtos analíticos:** Streamlit com análises e saúde do modelo; Dash / Race Control com leitura rápida de temporada, corridas, previsão e eras.
 - **Integrações:** Airflow para orquestração, MLflow para tracking/registry, FastAPI para serving, MySQL para espelho analítico e S3 para arquivamento opcional.
 
 ## Arquitetura e fluxo do projeto
@@ -70,9 +68,10 @@ flowchart LR
     marts --> dashboard
     abt --> dashboard
     api --> dashboard
+    bronze --> dash[Dash · Race Control]
+    abt --> dash
+    api --> dash
 ```
-
-![Fluxo visual de dados atravessando camadas progressivamente mais estruturadas até chegar à análise](img/lakehouse-architecture.webp)
 
 ### Fluxo em seis etapas
 
@@ -116,9 +115,26 @@ As páginas carregam apenas os dados necessários para cada visão. As leituras 
 - Rodadas sem participação preservam os pontos acumulados anteriores.
 - Probabilidades de um mesmo snapshot são normalizadas entre os candidatos e somam 100% dentro da tolerância definida pela API.
 
-## Modelo preditivo
+### Segunda interface: Dash / Race Control
 
-![Snapshots históricos e trajetórias probabilísticas convergindo após validação e calibração](img/model-intelligence.webp)
+O [Race Control em Dash](app/dash/README.md) é uma leitura rápida e independente do
+Streamlit, com quatro páginas que começam pelos **achados** calculados dos dados:
+**Temporada** (distância para o líder e de onde vêm os pontos), **Corridas** (margem
+de vitória e detalhe de cada etapa), **Previsão** (chance do modelo × pontos na mesma
+data) e **Eras** (tendências desde 1980 e motivos de abandono por década). O estado
+fica na URL (`/corridas?ano=2024`), então qualquer visão pode ser compartilhada. Lê
+Bronze e ABT diretamente; apenas a página de previsão consulta a API.
+
+```bash
+uv run --project app/dash python app/dash/main.py
+# http://localhost:8050
+```
+
+A classificação é reconstruída dos pontos das sessões e é apresentada como “líder
+em pontos”, não como título oficial. Previsões de datas passadas aparecem como
+simulações com o modelo publicado hoje.
+
+## Modelo preditivo
 
 O alvo do modelo é identificar o campeão de pilotos a partir das informações disponíveis em cada data de referência.
 
@@ -142,7 +158,7 @@ Os limites retornados pela API representam a dispersão entre membros do ensembl
 | Modelagem e explicabilidade | scikit-learn, SHAP |
 | Tracking e registry | MLflow |
 | API | FastAPI, Uvicorn |
-| Produto analítico | Streamlit, Plotly |
+| Produto analítico | Streamlit, Dash, Plotly |
 | Consumo externo | MySQL, Amazon S3 |
 | Ambiente | uv, Docker, Docker Compose |
 
@@ -164,7 +180,7 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-O Compose sobe Airflow, FastAPI e Streamlit. MLflow, MySQL e S3 são integrações externas e precisam ser configurados pelas variáveis de ambiente.
+O Compose sobe Airflow, FastAPI, Streamlit e Dash. MLflow, MySQL e S3 são integrações externas e precisam ser configurados pelas variáveis de ambiente.
 
 | Serviço | Endereço |
 |---|---|
@@ -172,6 +188,7 @@ O Compose sobe Airflow, FastAPI e Streamlit. MLflow, MySQL e S3 são integraçõ
 | FastAPI | <http://localhost:5002> |
 | OpenAPI | <http://localhost:5002/docs> |
 | Streamlit | <http://localhost:8501> |
+| Dash / Race Control | <http://localhost:8050> |
 
 Em containers, `MLFLOW_URI` deve apontar para um endereço acessível pela rede Docker. `localhost` dentro da API aponta para o próprio container da API.
 
@@ -192,7 +209,7 @@ O DAG do Airflow executa o caminho de ingestão, Bronze, Silver e MySQL. O coman
 |---|---|
 | Lake | `PATH_RAW`, `PATH_BRONZE`, `PATH_SILVER`, `PATH_QUERIES` |
 | MLflow | `MLFLOW_URI`, `MLFLOW_MODEL_REGISTERED`, `MLFLOW_EXPERIMENT_NAME` |
-| Serviços | `AIRFLOW_PORT`, `AIRFLOW_UID`, `API_PORT`, `API_URL`, `STREAMLIT_PORT` |
+| Serviços | `AIRFLOW_PORT`, `AIRFLOW_UID`, `API_PORT`, `API_URL`, `STREAMLIT_PORT`, `DASH_PORT` |
 | MySQL | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_ID_TABLE`, `MYSQL_USER`, `MYSQL_PASSWORD` |
 | S3 opcional | `AWS_KEY`, `AWS_SECRET_KEY`, `REGION_NAME` |
 
@@ -234,12 +251,13 @@ O exemplo acima é apenas estrutural: as demais features devem ser obtidas a par
 
 ## Qualidade, testes e performance
 
-O projeto possui três ambientes `uv` independentes: raiz, API e Streamlit.
+O projeto possui quatro ambientes `uv` independentes: raiz, API, Streamlit e Dash.
 
 ```bash
 uv run pytest
 (cd app/api && uv run pytest)
 (cd app/streamlit && uv run pytest)
+(cd app/dash && uv run --locked pytest)
 uv run ruff check .
 uv run ruff format --check .
 ```
@@ -260,6 +278,7 @@ O benchmark compara leituras completas e filtradas por temporada, informando lin
 lake-fastf1/
 ├── app/
 │   ├── api/                  # previsão, explicações e model card
+│   ├── dash/                 # Race Control: temporada, corridas, previsão e eras
 │   └── streamlit/            # páginas, dados, semântica e gráficos
 ├── dags/                     # DAG de ingestão e transformação
 ├── docs/                     # contratos e documentação complementar

@@ -84,23 +84,32 @@ def predict_v1(
     return body.get("predictions", {}), body.get("metadata", {})
 
 
+class PredictionUnavailable(RuntimeError):
+    """A API não respondeu; levantar evita que a falha fique no `st.cache_data`."""
+
+
 @st.cache_data(ttl="15m")
+def _api_json(endpoint: str) -> dict:
+    # Só respostas válidas entram em cache: exceções não são memorizadas.
+    response = requests.get(f"{URI_API}/{endpoint}", timeout=10)
+    response.raise_for_status()
+    body = response.json()
+    if not isinstance(body, dict):
+        raise TypeError("Resposta da API deve ser um objeto")
+    return body
+
+
 def model_info() -> dict:
     try:
-        response = requests.get(f"{URI_API}/model_info", timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except (requests.RequestException, ValueError):
+        return _api_json("model_info")
+    except (requests.RequestException, ValueError, TypeError):
         return {}
 
 
-@st.cache_data(ttl="15m")
 def model_card() -> dict:
     try:
-        response = requests.get(f"{URI_API}/v1/model-card", timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except (requests.RequestException, ValueError):
+        return _api_json("v1/model-card")
+    except (requests.RequestException, ValueError, TypeError):
         return {}
 
 
@@ -212,17 +221,27 @@ def load_predictions(year: int) -> pd.DataFrame:
     abt_version = _delta_version(TABLE_PATH_SILVER, optional=True)
     bronze_version = _delta_version(TABLE_PATH_BRONZE)
     assert bronze_version is not None
-    return _load_predictions(year, abt_version, bronze_version)
+    try:
+        return _load_predictions(year, abt_version, bronze_version)
+    except PredictionUnavailable:
+        # Sem API, a tela descritiva continua com as probabilidades vazias; a próxima
+        # renderização tenta a API de novo porque a falha não foi guardada em cache.
+        season, _ = _prediction_frame(year, abt_version, bronze_version)
+        season = season.copy()
+        season["prob_win"] = pd.NA
+        season["raw_score"] = pd.NA
+        return _finish_predictions(season, {})
 
 
 @st.cache_data(ttl="15m")
-def _load_predictions(
+def _prediction_frame(
     year: int, abt_version: int | None, bronze_version: int
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """ABT da temporada e payload do modelo, sem chamar a API."""
     del abt_version, bronze_version  # invalidam a cache após atualização Delta
     season = _abt_raw(year).copy()
     if season.empty:
-        return season
+        return season, pd.DataFrame()
     feature_cols = [column for column in season if column not in _NON_FEATURE]
     # A ABT traz pilotos vistos em temporadas anteriores. O universo de cada
     # snapshot contém apenas quem já estreou na temporada selecionada.
@@ -231,6 +250,17 @@ def _load_predictions(
     season["id"] = season["dt_ref"].dt.strftime("%Y-%m-%d") + "_" + season["DriverId"]
     season["prediction_group"] = season["dt_ref"].dt.strftime("%Y-%m-%d")
     payload = season[["id", "prediction_group", *feature_cols]].fillna(_MODEL_FILL)
+    return season, payload
+
+
+@st.cache_data(ttl="15m")
+def _load_predictions(
+    year: int, abt_version: int | None, bronze_version: int
+) -> pd.DataFrame:
+    season, payload = _prediction_frame(year, abt_version, bronze_version)
+    season = season.copy()
+    if season.empty:
+        return season
     metadata: dict = {}
     try:
         predictions, metadata = predict_v1(payload, include_intervals=False)
@@ -248,9 +278,12 @@ def _load_predictions(
             )
             season = season.merge(mapped[["id", "raw_score"]], on="id", how="left")
             season = analytics.normalize_probabilities(season)
-        except (requests.RequestException, ValueError, KeyError):
-            season["prob_win"] = pd.NA
-            season["raw_score"] = pd.NA
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            raise PredictionUnavailable(str(exc)) from exc
+    return _finish_predictions(season, metadata)
+
+
+def _finish_predictions(season: pd.DataFrame, metadata: dict) -> pd.DataFrame:
     for column in ("prob_win", "raw_score", "lower", "upper"):
         if column in season:
             season[column] = pd.to_numeric(season[column], errors="coerce")

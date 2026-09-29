@@ -2,21 +2,54 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 import time
 
 import mlflow
 import numpy as np
 import pandas as pd
+import skops.io
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from mlflow.models import Model
 from pydantic import BaseModel, Field
 
 API_PORT = int(os.environ["API_PORT"])
 MLFLOW_URI = os.environ["MLFLOW_URI"]
 MLFLOW_MODEL_REGISTERED = os.environ["MLFLOW_MODEL_REGISTERED"]
 MODEL_CACHE_TTL = float(os.environ.get("MODEL_CACHE_TTL", "300"))
+# Tipos revisados que o skops não confia por padrão. As árvores do RandomForest
+# guardam índices sem checagem de limites; o modelo vem do MLflow do próprio projeto.
+SKOPS_TRUSTED_TYPES = frozenset(
+    name.strip()
+    for name in os.environ.get(
+        "MODEL_SKOPS_TRUSTED_TYPES", "sklearn.tree._tree.Tree"
+    ).split(",")
+    if name.strip()
+)
 _MODEL_CACHE: dict[str, tuple[float, object]] = {}
+LOG = logging.getLogger(__name__)
+
+
+def _load_local_model(path: str):
+    """Abre um modelo MLflow sklearn já baixado.
+
+    O `mlflow.sklearn.load_model` só aceita os tipos skops gravados no `MLmodel`; modelos
+    registrados sem `skops_trusted_types` completos recebem aqui a lista revisada acima.
+    """
+    flavor = Model.load(path).flavors["sklearn"]
+    if flavor.get("serialization_format") != "skops":
+        return mlflow.sklearn.load_model(path)
+    code = os.path.join(path, flavor["code"]) if flavor.get("code") else None
+    if code and code not in sys.path:
+        # Classes próprias gravadas com `code_paths` precisam ser importáveis.
+        sys.path.insert(0, code)
+    trusted = set(flavor.get("skops_trusted_types") or []) | SKOPS_TRUSTED_TYPES
+    return skops.io.load(
+        os.path.join(path, flavor["pickled_model"]), trusted=sorted(trusted)
+    )
 
 
 def _load_model(model_id: str | None):
@@ -25,7 +58,8 @@ def _load_model(model_id: str | None):
     if not models or not models[0].latest_versions:
         raise LookupError(f"Registered model not found: {model_id}")
     last_version = max(int(version.version) for version in models[0].latest_versions)
-    return mlflow.sklearn.load_model(f"models:/{model_id}/{last_version}")
+    local = mlflow.artifacts.download_artifacts(f"models:/{model_id}/{last_version}")
+    return _load_local_model(local)
 
 
 def model_find(model_id: str | None = None):
@@ -34,7 +68,9 @@ def model_find(model_id: str | None = None):
         return cached[1]
     try:
         model = _load_model(model_id)
-    except Exception:  # noqa: BLE001
+    except Exception:
+        # As rotas respondem 500; o motivo real fica no log do container.
+        LOG.exception("Não foi possível carregar o modelo %s", model_id)
         return None
     _MODEL_CACHE[model_id] = (time.monotonic(), model)
     return model

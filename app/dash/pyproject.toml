@@ -1,0 +1,28 @@
+[project]
+name = "lake-fastf1-dash"
+version = "0.1.0"
+description = "Race Control — análises de Fórmula 1 em Dash"
+requires-python = ">=3.13"
+dependencies = [
+    "dash[compress]>=3.0,<4",
+    "deltalake>=1.6.2,<2",
+    "gunicorn>=23,<24",
+    "pandas>=2.2,<3",
+    "plotly>=6,<7",
+    "pyarrow>=19",
+    "python-dotenv>=1.0,<2",
+    "requests>=2.31,<3",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff.lint.isort]
+known-first-party = ["analytics", "components", "figures", "formatting", "main", "pages", "repository"]

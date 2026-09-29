@@ -4,7 +4,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.train_driver_champion import _normalize_by_snapshot, prepare_training_frame
+from src.train_driver_champion import (
+    SKOPS_TRUSTED_TYPES,
+    TemporalCalibratedClassifier,
+    _base_estimator,
+    _normalize_by_snapshot,
+    prepare_training_frame,
+)
 
 
 def test_prepare_training_frame_excludes_current_season():
@@ -45,3 +51,35 @@ def test_normalize_by_snapshot_is_mutually_exclusive():
     normalized = _normalize_by_snapshot(scores, dates)
     assert normalized[:2].sum() == pytest.approx(1)
     assert normalized[2:].sum() == pytest.approx(1)
+
+
+def test_logged_model_reopens_with_declared_skops_types(tmp_path):
+    """O MLflow grava em skops; sem os tipos declarados o modelo não reabre na API."""
+    import mlflow
+    from sklearn.linear_model import LogisticRegression
+
+    frame = pd.DataFrame(
+        {"f1": [0, 1, 0, 1, 2, 3, np.nan, 1], "f2": [1, 0, 1, 0, 3, 2, 1, 0]}
+    )
+    target = [0, 1, 0, 1, 1, 0, 0, 1]
+    estimator = _base_estimator().set_params(
+        forest__n_estimators=3, forest__min_samples_leaf=1, forest__n_jobs=1
+    )
+    estimator.fit(frame, target)
+    calibrator = LogisticRegression().fit(
+        estimator.predict_proba(frame)[:, 1].reshape(-1, 1), target
+    )
+    model = TemporalCalibratedClassifier(estimator, calibrator, ["f1", "f2"])
+    assert type(model).__module__ == "src.train_driver_champion"
+
+    path = tmp_path / "model"
+    mlflow.sklearn.save_model(
+        model,
+        str(path),
+        serialization_format="skops",
+        skops_trusted_types=SKOPS_TRUSTED_TYPES,
+        pip_requirements=["scikit-learn"],
+    )
+    loaded = mlflow.sklearn.load_model(str(path))
+    np.testing.assert_allclose(loaded.predict_proba(frame), model.predict_proba(frame))
+    assert len(loaded.predict_proba_members(frame)) == 3
